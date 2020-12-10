@@ -26,6 +26,8 @@ from mTRFpy import Operations as trfOp
 from TestModel import CLinear
 from TorchData import CEEGPredictDataset,CSeriesDataset
 from nnTRF.Model import CTRF
+from nnTRF.Metrics import BatchPearsonr,Pearsonr
+from nnTRF.Utils import TensorsToNumpy
 
 
 #def getWeights(model):
@@ -116,6 +118,8 @@ nEpoch = 20
 for epoch in range(nEpoch):
     iterator = iter(dataloaderTrain) 
     smoothRatio = 0.99
+    lossList = []
+    corrList = []
     with trange(len(dataloaderTrain)) as t:
         for idx in t:
             sample = next(iterator)
@@ -125,7 +129,13 @@ for epoch in range(nEpoch):
             loss = criterion(pred,y)
             loss.backward()
             optimizier.step()
-            t.set_description(f"epoc : {epoch}, loss {loss}")
+            tensors = TensorsToNumpy(pred,y)
+            corr = np.sum(BatchPearsonr(*tensors))
+            lossList.append(loss)
+            corrList.append(corr)
+            t.set_description(f"epoc : {epoch}, loss {loss}, corr {corr}")
+    
+    oLog('epoch',epoch,'loss',np.average(lossList),'corr',np.average(corrList))
     if (epoch + 1)%5 == 0:
         [f1,f2,f3] = plotWeights(model.weights,model.lagTimes)
         f1.savefig(tarFolder + 'epoch_' + str(epoch) + '_onset' + '.png')
@@ -135,7 +145,6 @@ for epoch in range(nEpoch):
         plt.close(f2)
         plt.close(f3)  
 
-corr = trfOp.pearsonr(y.detach().cpu().numpy(),pred.detach().cpu().numpy())
 
     
 
