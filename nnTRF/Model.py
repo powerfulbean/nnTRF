@@ -30,6 +30,37 @@ def Idxs2msec(lags,fs):
     temp = np.array(lags)
     return list(temp/fs * 1e3)
 
+def genLagMat(x,lags,Zeropad:bool = True,bias =True): #
+    '''
+    build the lag matrix based on input.
+    x: input matrix
+    lags: a list (or list like supporting len() method) of integers, 
+         each of them should indicate the time lag in samples.
+    
+    see also 'lagGen' in mTRF-Toolbox https://github.com/mickcrosse/mTRF-Toolbox
+    '''
+    nLags = len(lags)
+    
+    nSamples = x.shape[0]
+    nVar = x.shape[1]
+    lagMatrix = np.zeros((nSamples,nVar*nLags))
+    
+    for idx,lag in enumerate(lags):
+        colSlice = slice(idx * nVar,(idx + 1) * nVar)
+        if lag < 0:
+            lagMatrix[0:nSamples + lag,colSlice] = x[-lag:,:]
+        elif lag > 0:
+            lagMatrix[lag:nSamples,colSlice] = x[0:nSamples-lag,:]
+        else:
+            lagMatrix[:,colSlice] = x
+    
+    if bias:
+        lagMatrix = np.concatenate([np.ones((lagMatrix.shape[0],1)),lagMatrix],1);
+
+#    print(lagMatrix.shape)    
+    
+    return lagMatrix
+
 class CTRF(torch.nn.Module):
     # the shape of the input for the forward should be the (nBatch,nTimeSteps,nChannels) 
     

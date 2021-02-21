@@ -4,9 +4,7 @@ Created on Wed Nov 18 00:24:45 2020
 
 @author: Jin Dou
 """
-import sys
-sys.path.append('..')
-sys.path.append('../mTRFpy/')
+
 import torch
 #from mTRF import Operation as trfOp
 

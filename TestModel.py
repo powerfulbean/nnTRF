@@ -7,6 +7,7 @@ Created on Wed Nov 18 00:14:06 2020
 
 import torch
 import torch.nn as nn
+import nnTRF.Model as nntrfModel
 
 class CLinear(nn.Module):
     
@@ -21,3 +22,19 @@ class CLinear(nn.Module):
         xDenseOut = self.oDense(x)
         return xDenseOut
     
+    
+class CTanhshrink(nn.Module):
+    
+    def __init__(self,inDim,outDim,trfOutDim,tmin,tmax,fs):
+        super().__init__()
+        self.oTRF = nntrfModel.CTRF(inDim,trfOutDim,tmin,tmax,fs)
+        self.oNonLinear = nn.Sequential(
+#                nn.Linear(trfOutDim,64),
+#                nn.LeakyReLU(),
+                nn.Linear(trfOutDim,outDim),
+                nn.Tanhshrink()
+                )
+        
+    def forward(self,x):
+        trfOut = self.oTRF(x)
+        return self.oNonLinear(trfOut)
