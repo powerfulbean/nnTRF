@@ -64,7 +64,7 @@ def genLagMat(x,lags,Zeropad:bool = True,bias =True): #
 class CTRF(torch.nn.Module):
     # the shape of the input for the forward should be the (nBatch,nTimeSteps,nChannels) 
     
-    def __init__(self,inDim,outDim,tmin_ms,tmax_ms,fs):
+    def __init__(self,inDim,outDim,tmin_ms,tmax_ms,fs,bias = True):
         super().__init__()
         self.tmin_ms = tmin_ms
         self.tmax_ms = tmax_ms
@@ -72,7 +72,9 @@ class CTRF(torch.nn.Module):
         self.lagIdxs = msec2Idxs([tmin_ms,tmax_ms],fs)
         self.lagTimes = Idxs2msec(self.lagIdxs,fs)
         self.realInDim = len(self.lagIdxs) * inDim
-        self.oDense = torch.nn.Linear(self.realInDim,outDim)
+        self.oDense = torch.nn.Linear(self.realInDim,outDim,bias = bias)
+        self.inDim = inDim
+        self.outDim = outDim
         
     def timeLagging(self,tensor):
         x = tensor
@@ -104,5 +106,65 @@ class CTRF(torch.nn.Module):
     @property
     def weights(self):
         return self.state_dict()['oDense.weight'].cpu().detach().numpy()
+
+class CPadOrCrop1D(torch.nn.Module):
+    def __init__(self,tmin_idx,tmax_idx):
+        super().__init__()
+        self.tmin_idx = tmin_idx
+        self.tmax_idx = tmax_idx
+    
+    def forward(self,x):
+        # padding buttom
+        if (self.tmin_idx <= 0):
+            x = torch.nn.functional.pad(x,((0,-self.tmin_idx)))
+        else:
+            x = x[:,:,:-self.tmin_idx]
+        if (self.tmax_idx < 0):
+            x = x[:,:,-self.tmax_idx:]
+        else:
+            x = torch.nn.functional.pad(x,((self.tmax_idx,0)))
+        return x
+            
+
+class CCNNTRF(torch.nn.Module):
+    # the shape of the input for the forward should be the (nBatch,nChannels,nTimeSteps,) 
+    # Be care of the calculation of correlation, when using this model,
+    # because the nnTRF.Metrics.Pearsonr treat the input data as the shape of 
+    # (nTimeSteps, nChannels)
+    def __init__(self,inDim,outDim,tmin_ms,tmax_ms,fs):
+        super().__init__()
+        self.tmin_ms = tmin_ms
+        self.tmax_ms = tmax_ms
+        self.fs = fs
+        self.lagIdxs = msec2Idxs([tmin_ms,tmax_ms],fs)
+        self.lagTimes = Idxs2msec(self.lagIdxs,fs)
+        self.oPad = torch.nn.ConstantPad2d((0,0,),0)
+        self.tmin_idx = self.lagIdxs[0]
+        self.tmax_idx = self.lagIdxs[-1]
+        self.oCNN = torch.nn.Conv1d(inDim, outDim, len(self.lagTimes))
+        self.oPadOrCrop = CPadOrCrop1D(self.tmin_idx,self.tmax_idx)
+        #if both lagMin and lagMax > 0, more complex operation
+        
+    def forward(self,x):
+        x = self.oPadOrCrop(x)
+        x = self.oCNN(x)
+        return x
+    
+    @property
+    def weights(self):
+        '''
+        Formatted weights
+
+        Returns
+        -------
+        TYPE
+            DESCRIPTION.
+
+        '''
+        return np.flip(self.state_dict()['oCNN.weight'].cpu().detach().numpy(),axis = -1)
+        
+        
+    
+    
     
         
