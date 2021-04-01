@@ -8,6 +8,8 @@ Created on Wed Dec  9 10:11:27 2020
 
 import torch
 import numpy as np
+from .Metrics import Pearsonr, BatchPearsonr
+from .Utils import TensorsToNumpy
 
 def msec2Idxs(msecRange,fs):
     '''
@@ -131,7 +133,7 @@ class CCNNTRF(torch.nn.Module):
     # Be care of the calculation of correlation, when using this model,
     # because the nnTRF.Metrics.Pearsonr treat the input data as the shape of 
     # (nTimeSteps, nChannels)
-    def __init__(self,inDim,outDim,tmin_ms,tmax_ms,fs):
+    def __init__(self,inDim,outDim,tmin_ms,tmax_ms,fs,groups = 1):
         super().__init__()
         self.tmin_ms = tmin_ms
         self.tmax_ms = tmax_ms
@@ -141,8 +143,9 @@ class CCNNTRF(torch.nn.Module):
         self.oPad = torch.nn.ConstantPad2d((0,0,),0)
         self.tmin_idx = self.lagIdxs[0]
         self.tmax_idx = self.lagIdxs[-1]
-        self.oCNN = torch.nn.Conv1d(inDim, outDim, len(self.lagTimes))
+        self.oCNN = torch.nn.Conv1d(inDim, outDim, len(self.lagTimes),groups = groups)
         self.oPadOrCrop = CPadOrCrop1D(self.tmin_idx,self.tmax_idx)
+        self.groups = groups
         #if both lagMin and lagMax > 0, more complex operation
         
     def forward(self,x):
@@ -162,6 +165,11 @@ class CCNNTRF(torch.nn.Module):
 
         '''
         return np.flip(self.state_dict()['oCNN.weight'].cpu().detach().numpy(),axis = -1)
+    
+    def BatchPearsonr(self,pred,y):
+        tensors = TensorsToNumpy(pred.transpose(-1,-2),y.transpose(-1,-2))
+        return BatchPearsonr(*tensors)
+    
         
         
     
