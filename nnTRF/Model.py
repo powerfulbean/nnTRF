@@ -156,13 +156,10 @@ class CCNNTRF(torch.nn.Module):
     @property
     def weights(self):
         '''
-        Formatted weights
-
         Returns
         -------
-        TYPE
-            DESCRIPTION.
-
+        Formatted weights
+        [outChannels, inChannels, timeLags]
         '''
         return np.flip(self.state_dict()['oCNN.weight'].cpu().detach().numpy(),axis = -1)
     
@@ -170,6 +167,31 @@ class CCNNTRF(torch.nn.Module):
         tensors = TensorsToNumpy(pred.transpose(-1,-2),y.transpose(-1,-2))
         return BatchPearsonr(*tensors)
     
+    @property
+    def readableWeights(self):
+        '''
+        Returns
+        -------
+        Readable formatted weights
+        [timeLags, inChannels, outChannels]
+        '''
+        return self.weights.T
+    
+    def W(self,inIdx=None,outIdx=None,tIdx=None):
+        '''
+        Returns
+        -------
+        readable formatted weights of selected inChannel/outChannel/lagTime
+        '''
+        
+        inIdx = slice(inIdx) if inIdx is None else inIdx
+        outIdx = slice(outIdx) if outIdx is None else outIdx
+        tIdx = slice(tIdx) if tIdx is None else tIdx
+        return self.readableWeights[tIdx,inIdx,outIdx]
+    
+    def load(self,path):
+        self.load_state_dict(torch.load(path)['state_dict'])
+        self.eval()
         
         
     
