@@ -158,7 +158,7 @@ class CCNNTRF(torch.nn.Module):
         '''
         Returns
         -------
-        Formatted weights
+        Formatted weights, with timeLag dimension flipped to conform to mTRF
         [outChannels, inChannels, timeLags]
         '''
         return np.flip(self.state_dict()['oCNN.weight'].cpu().detach().numpy(),axis = -1)
