@@ -133,7 +133,7 @@ class CCNNTRF(torch.nn.Module):
     # Be care of the calculation of correlation, when using this model,
     # because the nnTRF.Metrics.Pearsonr treat the input data as the shape of 
     # (nTimeSteps, nChannels)
-    def __init__(self,inDim,outDim,tmin_ms,tmax_ms,fs,groups = 1):
+    def __init__(self,inDim,outDim,tmin_ms,tmax_ms,fs,groups = 1,enableBN = False):
         super().__init__()
         self.tmin_ms = tmin_ms
         self.tmax_ms = tmax_ms
@@ -146,9 +146,13 @@ class CCNNTRF(torch.nn.Module):
         self.oCNN = torch.nn.Conv1d(inDim, outDim, len(self.lagTimes),groups = groups)
         self.oPadOrCrop = CPadOrCrop1D(self.tmin_idx,self.tmax_idx)
         self.groups = groups
+        self.enableBN = enableBN
+        self.oBN = torch.nn.BatchNorm1d(inDim)
         #if both lagMin and lagMax > 0, more complex operation
         
     def forward(self,x):
+        if self.enableBN:
+            x = self.oBN(x)
         x = self.oPadOrCrop(x)
         x = self.oCNN(x)
         return x
