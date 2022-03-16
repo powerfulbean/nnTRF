@@ -167,6 +167,24 @@ class CCNNTRF(torch.nn.Module):
         '''
         return np.flip(self.state_dict()['oCNN.weight'].cpu().detach().numpy(),axis = -1)
     
+    @property
+    def w(self):
+        '''
+        funtion reproduce the definition of w in mTRF-toolbox
+
+        Returns
+        -------
+        None.
+
+        '''
+        tensor = self.state_dict()['oCNN.weight']
+        tensor = tensor.permute(1,2,0)
+        return np.flip(tensor.cpu().detach().numpy(),axis = 1)
+    
+    @property
+    def t(self):
+        return self.lagTimes
+    
     def BatchPearsonr(self,pred,y):
         tensors = TensorsToNumpy(pred.transpose(-1,-2),y.transpose(-1,-2))
         return BatchPearsonr(*tensors)
@@ -194,7 +212,7 @@ class CCNNTRF(torch.nn.Module):
         return self.readableWeights[tIdx,inIdx,outIdx]
     
     def load(self,path):
-        self.load_state_dict(torch.load(path)['state_dict'])
+        self.load_state_dict(torch.load(path,map_location='cpu')['state_dict'])
         self.eval()
         
         
