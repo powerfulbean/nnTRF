@@ -147,7 +147,7 @@ class CCNNTRF(torch.nn.Module):
         self.oPadOrCrop = CPadOrCrop1D(self.tmin_idx,self.tmax_idx)
         self.groups = groups
         self.enableBN = enableBN
-        self.oBN = torch.nn.BatchNorm1d(inDim)
+        self.oBN = torch.nn.BatchNorm1d(inDim,affine=False,track_running_stats=False)
         #if both lagMin and lagMax > 0, more complex operation
         
     def forward(self,x):
