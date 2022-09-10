@@ -120,15 +120,18 @@ class CTRF(torch.nn.Module):
 
         '''
         w = self.oDense.weight.T.cpu().detach()
-        w = w.view(self.inDim,len(self.lagIdxs),self.outDim)
+        w = w.view(len(self.lagIdxs),self.inDim,self.outDim)
         return w
     
     def loadFromMTRFpy(self,w,b,device):
         #w: (nInChan, nLag, nOutChan)
         print(w.shape)
+        w = w * 1/ self.fs
+        b = b * 1/self.fs
         b = b.squeeze()
         w = torch.FloatTensor(w).to(device)
-        w = w.view(-1,w.shape[-1]).T
+        w = w.permute(1,0,2)
+        w = w.reshape(-1,w.shape[-1]).T
         b = torch.FloatTensor(b).to(device)
         with torch.no_grad():
             self.oDense.weight = torch.nn.Parameter(w)

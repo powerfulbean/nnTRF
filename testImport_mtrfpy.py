@@ -79,3 +79,4 @@ predNNTRF2 = oTRF2(torch.FloatTensor(mTRFpyInput.T).to(device).unsqueeze(0))[0].
 predNNTRF3 = oTRF3(torch.FloatTensor(mTRFpyInput).to(device).unsqueeze(0))[0].detach().cpu().numpy()
 
 assert np.allclose(predNNTRF2,predTRFpy,rtol=1e-05, atol=1e-07)
+assert np.allclose(predNNTRF3,predTRFpy,rtol=1e-05, atol=1e-07)
