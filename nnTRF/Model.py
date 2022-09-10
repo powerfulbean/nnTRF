@@ -121,6 +121,8 @@ class CTRF(torch.nn.Module):
         '''
         w = self.oDense.weight.T.cpu().detach()
         w = w.view(len(self.lagIdxs),self.inDim,self.outDim)
+        w = w.permute(1,0,2)
+        w = w.numpy()
         return w
     
     def loadFromMTRFpy(self,w,b,device):

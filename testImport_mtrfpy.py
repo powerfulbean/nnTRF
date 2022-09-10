@@ -24,11 +24,18 @@ plt.plot(mTRFparam['w'][0])
 plt.plot(mTRFparam['w'][1])
 plt.plot(mTRFparam['w'][2])
 
+ds = prepareDatasets(['NS'],vectorType = 'Surprisal',addEnvelope = True)
+ds.stimFilterKeys = ['onset','env','vector','tIntvl']
+oMTRF = mtrfModel.CTRF().load(path)
+oTorchDS = CTorchDataset(ds)
+dldr = torch.utils.data.dataloader.DataLoader(oTorchDS)
+oNumpyDS = mtrfDS.buildListFromSRFDataset(ds)
+
 oTRFs = torch.nn.ModuleDict()
-oTRFs.eval()
 oTRF = CCNNTRF(2, 128, 0, 800, 64)
 oTRF.loadFromMTRFpy(mTRFparam['w'][0:2], mTRFparam['b'][0:2]/2,device)
 oTRFs['NS'] = oTRF
+oTRFs.eval()
 
 oTRF2 = CCNNTRF(3, 128, 0, 800, 64)
 oTRF2.loadFromMTRFpy(mTRFparam['w'], mTRFparam['b'],device)
@@ -54,14 +61,6 @@ plt.plot(oTRF.w[0])
 plt.plot(oTRF.w[1])
 plt.plot(oNonLinTRF.LinearKernels['NS'].weight[0].cpu().detach().numpy())
 
-
-ds = prepareDatasets(['NS'],vectorType = 'Surprisal',addEnvelope = True)
-ds.stimFilterKeys = ['onset','env','vector','tIntvl']
-oMTRF = mtrfModel.CTRF().load(path)
-oTorchDS = CTorchDataset(ds)
-dldr = torch.utils.data.dataloader.DataLoader(oTorchDS)
-oNumpyDS = mtrfDS.buildListFromSRFDataset(ds)
-
 mTRFpyInput = oNumpyDS[0][0]
 nnTRFInput = next(iter(dldr))
 
@@ -80,3 +79,5 @@ predNNTRF3 = oTRF3(torch.FloatTensor(mTRFpyInput).to(device).unsqueeze(0))[0].de
 
 assert np.allclose(predNNTRF2,predTRFpy,rtol=1e-05, atol=1e-07)
 assert np.allclose(predNNTRF3,predTRFpy,rtol=1e-05, atol=1e-07)
+assert np.allclose(predNNTRF,predTRFpy,rtol=1e-05, atol=1e-07)
+assert np.allclose(predNNTRF2,predNNTRF3,rtol=1e-05, atol=1e-07)
