@@ -108,6 +108,32 @@ class CTRF(torch.nn.Module):
     @property
     def weights(self):
         return self.state_dict()['oDense.weight'].cpu().detach().numpy()
+    
+    @property
+    def w(self):
+        '''
+        funtion reproduce the definition of w in mTRF-toolbox
+
+        Returns
+        -------
+        None.
+
+        '''
+        w = self.oDense.weight.T.cpu().detach()
+        w = w.view(self.inDim,len(self.lagIdxs),self.outDim)
+        return w
+    
+    def loadFromMTRFpy(self,w,b,device):
+        #w: (nInChan, nLag, nOutChan)
+        print(w.shape)
+        b = b.squeeze()
+        w = torch.FloatTensor(w).to(device)
+        w = w.view(-1,w.shape[-1]).T
+        b = torch.FloatTensor(b).to(device)
+        with torch.no_grad():
+            self.oDense.weight = torch.nn.Parameter(w)
+            self.oDense.bias = torch.nn.Parameter(b)
+        return self
 
 class CPadOrCrop1D(torch.nn.Module):
     def __init__(self,tmin_idx,tmax_idx):
@@ -180,6 +206,25 @@ class CCNNTRF(torch.nn.Module):
         tensor = self.state_dict()['oCNN.weight']
         tensor = tensor.permute(1,2,0)
         return np.flip(tensor.cpu().detach().numpy(),axis = 1)
+    
+    
+    @property
+    def b(self):
+        return self.oCNN.bias.squeeze().detach().cpu().numpy()
+    
+    def loadFromMTRFpy(self,w,b,device):
+        #w: (nInChan, nLag, nOutChan)
+        w = w * 1/self.fs
+        b = b * 1/self.fs
+        b = b.squeeze()
+        w = np.flip(w,axis = 1).copy()
+        w = torch.FloatTensor(w).to(device)
+        w = w.permute(2,0,1)
+        b = torch.FloatTensor(b).to(device)
+        with torch.no_grad():
+            self.oCNN.weight = torch.nn.Parameter(w)
+            self.oCNN.bias = torch.nn.Parameter(b)
+        return self
     
     @property
     def t(self):
