@@ -29,7 +29,7 @@ ds.stimFilterKeys = ['onset','env','vector','tIntvl']
 oMTRF = mtrfModel.CTRF().load(path)
 oTorchDS = CTorchDataset(ds)
 dldr = torch.utils.data.dataloader.DataLoader(oTorchDS)
-oNumpyDS = mtrfDS.buildListFromSRFDataset(ds)
+oNumpyDS = mtrfDS.buildListFromSRFDataset(ds,zscore = False)
 
 oTRFs = torch.nn.ModuleDict()
 oTRF = CCNNTRF(2, 128, 0, 800, 64)
@@ -52,7 +52,7 @@ plt.plot(oTRF3.w[2])
 oTRF = oTRF.to(device)
 oNonLinTRF = CTransformTRFTwoStage('CSelfAttnSeqContexter',1,128,0,800,64,device,['NS'])
 oNonLinTRF.loadFromMTRFpy(mTRFparam['w'][2:], mTRFparam['b'].squeeze()/2,'NS')
-oMixedTRF = CMixedRF(device, oTRFs, oNonLinTRF,ifZscore = True)
+oMixedTRF = CMixedRF(device, oTRFs, oNonLinTRF,ifZscore = False)
 oMixedTRF = oMixedTRF.to(device)
 oMixedTRF.eval()
 
