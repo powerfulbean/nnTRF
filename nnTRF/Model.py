@@ -127,7 +127,7 @@ class CTRF(torch.nn.Module):
     
     def loadFromMTRFpy(self,w,b,device):
         #w: (nInChan, nLag, nOutChan)
-        print(w.shape)
+        # print(w.shape)
         w = w * 1/ self.fs
         b = b * 1/self.fs
         b = b.squeeze()
