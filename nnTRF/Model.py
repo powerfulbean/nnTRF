@@ -130,7 +130,7 @@ class CTRF(torch.nn.Module):
         # print(w.shape)
         w = w * 1/ self.fs
         b = b * 1/self.fs
-        b = b.squeeze()
+        b = b[0]
         w = torch.FloatTensor(w).to(device)
         w = w.permute(1,0,2)
         w = w.reshape(-1,w.shape[-1]).T
