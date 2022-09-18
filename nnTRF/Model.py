@@ -221,7 +221,7 @@ class CCNNTRF(torch.nn.Module):
         #w: (nInChan, nLag, nOutChan)
         w = w * 1/self.fs
         b = b * 1/self.fs
-        b = b.squeeze()
+        b = b[0]
         w = np.flip(w,axis = 1).copy()
         w = torch.FloatTensor(w).to(device)
         w = w.permute(2,0,1)
