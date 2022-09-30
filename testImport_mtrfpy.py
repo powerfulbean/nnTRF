@@ -33,7 +33,7 @@ oNumpyDS = mtrfDS.buildListFromSRFDataset(ds,zscore = False)
 
 oTRFs = torch.nn.ModuleDict()
 oTRF = CCNNTRF(2, 128, 0, 800, 64)
-oTRF.loadFromMTRFpy(mTRFparam['w'][0:2], mTRFparam['b'][0:2]/2,device)
+oTRF.loadFromMTRFpy(mTRFparam['w'][0:2], mTRFparam['b']/2,device)
 oTRFs['NS'] = oTRF
 oTRFs.eval()
 
@@ -51,7 +51,7 @@ plt.plot(oTRF3.w[2])
 
 oTRF = oTRF.to(device)
 oNonLinTRF = CTransformTRFTwoStage('CSelfAttnSeqContexter',1,128,0,800,64,device,['NS'])
-oNonLinTRF.loadFromMTRFpy(mTRFparam['w'][2:], mTRFparam['b'].squeeze()/2,'NS')
+oNonLinTRF.loadFromMTRFpy(mTRFparam['w'][2:], mTRFparam['b']/2,'NS')
 oMixedTRF = CMixedRF(device, oTRFs, oNonLinTRF,ifZscore = False)
 oMixedTRF = oMixedTRF.to(device)
 oMixedTRF.eval()
@@ -81,3 +81,5 @@ assert np.allclose(predNNTRF2,predTRFpy,rtol=1e-05, atol=1e-07)
 assert np.allclose(predNNTRF3,predTRFpy,rtol=1e-05, atol=1e-07)
 assert np.allclose(predNNTRF,predTRFpy,rtol=1e-05, atol=1e-07)
 assert np.allclose(predNNTRF2,predNNTRF3,rtol=1e-05, atol=1e-07)
+
+_,r,err = oMTRF.predict(mTRFpyInput,oNumpyDS[1][0])
