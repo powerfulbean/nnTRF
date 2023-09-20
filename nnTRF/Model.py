@@ -10,6 +10,10 @@ import torch
 import numpy as np
 from .Metrics import Pearsonr, BatchPearsonr
 from .Utils import TensorsToNumpy
+try:
+    from matplotlib import pyplot as plt
+except:
+    plt = None
 
 def msec2Idxs(msecRange,fs):
     '''
@@ -164,7 +168,7 @@ class CCNNTRF(torch.nn.Module):
     # Be care of the calculation of correlation, when using this model,
     # because the nnTRF.Metrics.Pearsonr treat the input data as the shape of 
     # (nTimeSteps, nChannels)
-    def __init__(self,inDim,outDim,tmin_ms,tmax_ms,fs,groups = 1,enableBN = False):
+    def __init__(self,inDim,outDim,tmin_ms,tmax_ms,fs,groups = 1,enableBN = False, dilation = 1):
         super().__init__()
         self.tmin_ms = tmin_ms
         self.tmax_ms = tmax_ms
@@ -174,7 +178,14 @@ class CCNNTRF(torch.nn.Module):
         self.oPad = torch.nn.ConstantPad2d((0,0,),0)
         self.tmin_idx = self.lagIdxs[0]
         self.tmax_idx = self.lagIdxs[-1]
-        self.oCNN = torch.nn.Conv1d(inDim, outDim, len(self.lagTimes),groups = groups)
+        nKernels = 
+        self.oCNN = torch.nn.Conv1d(
+            inDim, 
+            outDim, 
+            len(self.lagTimes),
+            groups = groups,
+            dilation = dilation
+        )
         self.oPadOrCrop = CPadOrCrop1D(self.tmin_idx,self.tmax_idx)
         self.groups = groups
         self.enableBN = enableBN
@@ -266,7 +277,14 @@ class CCNNTRF(torch.nn.Module):
         self.eval()
         
         
-    
+    def plotWeights(self,outChan = None, inChan = None):
+        fig,ax = plt.subplots()
+        if outChan is None:
+            outChan = slice(outChan)
+        if inChan in None:
+            intChan = slice(intChan)
+        ax.plot(self.t, self.weights[outChan, inChan])
+        return fig, ax
     
     
         
