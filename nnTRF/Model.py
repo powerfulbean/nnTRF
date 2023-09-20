@@ -178,11 +178,14 @@ class CCNNTRF(torch.nn.Module):
         self.oPad = torch.nn.ConstantPad2d((0,0,),0)
         self.tmin_idx = self.lagIdxs[0]
         self.tmax_idx = self.lagIdxs[-1]
-        # nKernels = 
+        nLags = len(self.lagTimes)
+        nKernels = (nLags - 1) / dilation + 1
+        assert np.ceil(nKernels) == np.floor(nKernels)
+        nKernels = int(nKernels)
         self.oCNN = torch.nn.Conv1d(
             inDim, 
             outDim, 
-            len(self.lagTimes),
+            nKernels,
             groups = groups,
             dilation = dilation
         )
