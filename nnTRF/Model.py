@@ -178,7 +178,7 @@ class CCNNTRF(torch.nn.Module):
         self.oPad = torch.nn.ConstantPad2d((0,0,),0)
         self.tmin_idx = self.lagIdxs[0]
         self.tmax_idx = self.lagIdxs[-1]
-        nKernels = 
+        # nKernels = 
         self.oCNN = torch.nn.Conv1d(
             inDim, 
             outDim, 
@@ -282,7 +282,7 @@ class CCNNTRF(torch.nn.Module):
         if outChan is None:
             outChan = slice(outChan)
         if inChan in None:
-            intChan = slice(intChan)
+            inChan = slice(inChan)
         ax.plot(self.t, self.weights[outChan, inChan])
         return fig, ax
     
