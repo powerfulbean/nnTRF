@@ -281,9 +281,9 @@ class CCNNTRF(torch.nn.Module):
         fig,ax = plt.subplots()
         if outChan is None:
             outChan = slice(outChan)
-        if inChan in None:
+        if inChan is None:
             inChan = slice(inChan)
-        ax.plot(self.t, self.weights[outChan, inChan])
+        ax.plot(self.t, self.weights[outChan, inChan].T)
         return fig, ax
     
     
