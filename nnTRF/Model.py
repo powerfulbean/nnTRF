@@ -193,6 +193,7 @@ class CCNNTRF(torch.nn.Module):
         self.groups = groups
         self.enableBN = enableBN
         self.oBN = torch.nn.BatchNorm1d(inDim,affine=False,track_running_stats=False)
+        self.dilation = dilation
         #if both lagMin and lagMax > 0, more complex operation
         
     def forward(self,x):
@@ -286,7 +287,7 @@ class CCNNTRF(torch.nn.Module):
             outChan = slice(outChan)
         if inChan is None:
             inChan = slice(inChan)
-        ax.plot(self.t, self.weights[outChan, inChan].T)
+        ax.plot(self.t[::self.dilation], self.weights[outChan, inChan].T)
         return fig, ax
     
     
