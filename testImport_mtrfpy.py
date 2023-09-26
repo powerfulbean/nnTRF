@@ -7,8 +7,8 @@ Created on Thu Sep  8 18:05:23 2022
 
 from StellarInfra import siIO
 from matplotlib import pyplot as plt
-from nnTRF.Metrics import Pearsonr
-from nnTRF.Model import CCNNTRF, CTRF
+from nntrf.Metrics import Pearsonr
+from nntrf.Model import CCNNTRF, CTRF
 from StretchedTRF.Model import CTransformTRFTwoStage,CMixedRF
 from ResearchCode.nnTRFPlus.dyTimeStimuli.CustomWare import prepareDatasets
 from mTRFpy import Model as mtrfModel

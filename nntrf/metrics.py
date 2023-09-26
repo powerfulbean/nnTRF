@@ -5,7 +5,7 @@ Created on Thu Dec 10 14:55:06 2020
 @author: Jin Dou
 """
 import numpy as np
-from scipy import stats as spStats
+# from scipy import stats as spStats
 
 def Pearsonr(x,y):
     nObs = len(x)

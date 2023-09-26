@@ -6,7 +6,7 @@ Created on Tue Dec  8 22:35:50 2020
 """
 import torch
 import numpy as np
-from nnTRF.Model import CTRF,CCNNTRF
+from nntrf.Model import CTRF,CCNNTRF
 # lagIdxs = [-1,0,1,2]
 # data1 = np.expand_dims(np.array([[1,2,3,4,5],[-1,-2,-3,-4,-5]]).T,0)
 # data2 = np.expand_dims(np.array([[2,3,4,5,6],[-2,-3,-4,-5,-6]]).T,0)

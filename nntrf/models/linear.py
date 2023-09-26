@@ -8,8 +8,8 @@ Created on Wed Dec  9 10:11:27 2020
 
 import torch
 import numpy as np
-from .Metrics import Pearsonr, BatchPearsonr
-from .Utils import TensorsToNumpy
+from ..metrics import Pearsonr, BatchPearsonr
+from ..utils import TensorsToNumpy
 try:
     from matplotlib import pyplot as plt
 except:
@@ -36,38 +36,10 @@ def Idxs2msec(lags,fs):
     temp = np.array(lags)
     return list(temp/fs * 1e3)
 
-def genLagMat(x,lags,Zeropad:bool = True,bias =True): #
+class LRTRF(torch.nn.Module):
     '''
-    build the lag matrix based on input.
-    x: input matrix
-    lags: a list (or list like supporting len() method) of integers, 
-         each of them should indicate the time lag in samples.
-    
-    see also 'lagGen' in mTRF-Toolbox https://github.com/mickcrosse/mTRF-Toolbox
+    the TRF implemented with a linear layer and time lag of input 
     '''
-    nLags = len(lags)
-    
-    nSamples = x.shape[0]
-    nVar = x.shape[1]
-    lagMatrix = np.zeros((nSamples,nVar*nLags))
-    
-    for idx,lag in enumerate(lags):
-        colSlice = slice(idx * nVar,(idx + 1) * nVar)
-        if lag < 0:
-            lagMatrix[0:nSamples + lag,colSlice] = x[-lag:,:]
-        elif lag > 0:
-            lagMatrix[lag:nSamples,colSlice] = x[0:nSamples-lag,:]
-        else:
-            lagMatrix[:,colSlice] = x
-    
-    if bias:
-        lagMatrix = np.concatenate([np.ones((lagMatrix.shape[0],1)),lagMatrix],1);
-
-#    print(lagMatrix.shape)    
-    
-    return lagMatrix
-
-class CTRF(torch.nn.Module):
     # the shape of the input for the forward should be the (nBatch,nTimeSteps,nChannels) 
     
     def __init__(self,inDim,outDim,tmin_ms,tmax_ms,fs,bias = True):
@@ -163,7 +135,12 @@ class CPadOrCrop1D(torch.nn.Module):
         return x
             
 
-class CCNNTRF(torch.nn.Module):
+class CNNTRF(torch.nn.Module):
+    '''
+    the TRF implemented with a convolutional layer,
+        and zero padding of input
+    '''
+      
     # the shape of the input for the forward should be the (nBatch,nChannels,nTimeSteps,) 
     # Be care of the calculation of correlation, when using this model,
     # because the nnTRF.Metrics.Pearsonr treat the input data as the shape of 
@@ -289,6 +266,5 @@ class CCNNTRF(torch.nn.Module):
             inChan = slice(inChan)
         ax.plot(self.t[::self.dilation], self.weights[outChan, inChan].T)
         return fig, ax
-    
     
         

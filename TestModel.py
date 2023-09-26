@@ -7,7 +7,7 @@ Created on Wed Nov 18 00:14:06 2020
 
 import torch
 import torch.nn as nn
-import nnTRF.Model as nntrfModel
+import nntrf.Model as nntrfModel
 
 class CLinear(nn.Module):
     

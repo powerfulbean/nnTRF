@@ -2,8 +2,8 @@ import setuptools
 
 
 setuptools.setup(
-  name="nnTRF",
-  version="0.0.1",
+  name="nntrf",
+  version="1.0.0",
   author="Powerfulbean",
   author_email="powerfulbean@gmail.com",
   long_description_content_type="text/markdown",

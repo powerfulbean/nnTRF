@@ -26,9 +26,9 @@ from mTRFpy import Operations as trfOp
 
 from TestModel import CLinear
 from TorchData import CEEGPredictDataset,CSeriesDataset
-from nnTRF.Model import CTRF
-from nnTRF.Metrics import BatchPearsonr,Pearsonr
-from nnTRF.Utils import TensorsToNumpy
+from nntrf.Model import CTRF
+from nntrf.Metrics import BatchPearsonr,Pearsonr
+from nntrf.Utils import TensorsToNumpy
 
 from TestModel import CTanhshrink
 
