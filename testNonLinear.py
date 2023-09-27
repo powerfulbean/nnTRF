@@ -68,12 +68,19 @@ nSeq = x.shape[2]
 timeinfo = [None for i in range(nBatch)]
 with torch.no_grad():
     predNNTRF = model(x, timeinfo).cpu().detach().permute(0,2,1).numpy()
-print(predNNTRF, predMTRF)
+# print(predNNTRF, predMTRF)
 
 from scipy.stats import pearsonr
 nBatch, nSeq, nChan = predNNTRF.shape
+rs = []
 for b in range(nBatch):
-        for c in range(nChan):
-            r = pearsonr(predNNTRF[b,:,c], predMTRF[b, :, c])[0]
-            print(r)
-# assert np.allclose(predNNTRF, predMTRF, atol = 1e-6)
+    for c in range(nChan):
+        r = pearsonr(predNNTRF[b,:,c], predMTRF[b, :, c])[0]
+        rs.append(r)
+print(np.mean(rs))
+
+with torch.no_grad():
+    model.trfsGen.funcTRF.saveMem = True
+    predNNTRF2 = model(x, timeinfo).cpu().detach().permute(0,2,1).numpy()
+print(predNNTRF, predNNTRF2)
+assert np.allclose(predNNTRF, predNNTRF2, atol = 1e-6)

@@ -123,6 +123,7 @@ class FourierFuncTRF(torch.nn.Module):
         maxN = nBasis // 2
         # (maxN,1)
         self.seqN = torch.arange(1,maxN+1,device = self.device).reshape(-1,1)
+        self.saveMem = False
 
     def fitTRFs(self,TRFs):
         self.TRFs[:,:,:] = torch.from_numpy(TRFs).to(self.device)[:,:,:]
@@ -199,7 +200,7 @@ class FourierFuncTRF(torch.nn.Module):
         nInChan,nOutChan,nBasis,_ = coefs.shape
         nMemReq = nSeq * nInChan * nOutChan * nBasis * nLag * 4
         print(torch.cuda.memory_allocated()/1024/1024)
-        if nMemReq > memAvai * 0.9:
+        if nMemReq > memAvai * 0.9 or self.saveMem:
             out = const0 * coefs[...,0,:]
             for nB in range(2 * maxN):
                 out = out + constN[...,nB,:] * coefs[...,1+nB,:]
@@ -328,6 +329,8 @@ class FuncTRFsGen(torch.nn.Module):
         paramSeqs = paramSeqs.view(nSeq,self.inDim,1,-1) 
         # nBatch,nSeq,nChan = paramSeqs.shape
         midParamList = self.mode.split(',')
+        if midParamList == ['']:
+            midParamList = []
         nParamMiss = 0
         if 'a' in midParamList:
             aIdx = midParamList.index('a')
