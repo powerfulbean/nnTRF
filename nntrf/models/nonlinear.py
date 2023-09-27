@@ -191,7 +191,7 @@ class FourierFuncTRF(torch.nn.Module):
                 axs[1].plot(FTRF)
         return fig
 
-class FuncTRFGen(torch.nn.Module):
+class FuncTRFsGen(torch.nn.Module):
     '''
     Implement the functional TRF generator, generate dynamically 
         warped TRF by transform the functional TRF template
@@ -211,6 +211,7 @@ class FuncTRFGen(torch.nn.Module):
         auxInDim = 0,
         device = 'cpu'
     ):
+        super().__init__()
         assert mode.replace('+-','') in ['a','b','a,b','a,b,c']
         self.inDim = inDim
         self.auxInDim = auxInDim
@@ -235,6 +236,7 @@ class FuncTRFGen(torch.nn.Module):
             inDim, outDim, device = self.expectedInOutDimOfFeatExtracter()
             self.featExtracter = CausalConv(inDim, outDim, 2).to(device)
 
+        self.limitOfShift_idx = torch.tensor(limitOfShift_idx)
 
     def expectedInOutDimOfFeatExtracter(self):
         inDim = self.inDim + self.auxInDim
@@ -279,8 +281,8 @@ class FuncTRFGen(torch.nn.Module):
         if 'b' in midParamList:
             bIdx = midParamList.index('b')
             bSeq = self.pickParam(paramSeqs, bIdx) #(nSeq,self.inDim,1,1)
-            bSeq = torch.maximum(bSeq, - self.limitOfShift_idx - self.nOOL)
-            bSeq = torch.minimum(bSeq,   self.limitOfShift_idx + self.nOOL)
+            bSeq = torch.maximum(bSeq, - self.limitOfShift_idx)
+            bSeq = torch.minimum(bSeq,   self.limitOfShift_idx)
         else:
             nParamMiss += 1
             bSeq = 0
@@ -341,19 +343,27 @@ class ASTRF(torch.nn.Module):
         nWin = len(self.lagTimes)
         self.nWin = nWin
         self.ltiTRFsGen = LTITRFGen(inDim,nWin,outDim,ifAddBiasInForward=False).to(device)
-        self.trfsGen = trfsGen
+        self.trfsGen = trfsGen if trfsGen is None else trfsGen.to(device)
         self.fs = fs
 
         self.bias = None
         #also train bias for the trfsGen provided by the user
         if self.trfsGen is not None:
-            self.bias = torch.nn.Parameter(torch.ones(outDim))
+            self.bias = torch.nn.Parameter(torch.ones(outDim, device = device))
             fan_in = inDim * nWin
             bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
             torch.nn.init.uniform_(self.bias, -bound, bound)
         
         self.trfAligner = TRFAligner(device)
         self._enableUserTRFGen = False 
+        self.device = device
+
+    def setTRFsGen(self, trfsGen):
+        self.trfsGen = trfsGen.to(self.device)
+        self.bias = torch.nn.Parameter(torch.ones(self.outDim, device = self.device))
+        fan_in = self.inDim * self.nWin
+        bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
+        torch.nn.init.uniform_(self.bias, -bound, bound)
 
     def getParamsForTrain(self):
         raise NotImplementedError()

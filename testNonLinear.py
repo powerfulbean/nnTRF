@@ -1,5 +1,5 @@
 import torch
-from nntrf.models import ASTRF
+from nntrf.models import ASTRF, FuncTRFsGen
 device = torch.device('cuda')
 model = ASTRF(1, 128, 0, 700, 64, device = device)
 
@@ -10,5 +10,18 @@ timeinfo = torch.tensor([
 x = x.to(device)
 timeinfo = timeinfo.to(device)
 
-output = model(x, timeinfo)
-print(output.shape)
+output1 = model(x, timeinfo)
+print(output1.shape)
+
+trfsGen = FuncTRFsGen(1, 128, 0, 700, 64, device = device)
+
+model.setTRFsGen(trfsGen)
+model.ifEnableUserTRFGen = True
+output2 = model(x, timeinfo)
+print(output2.shape)
+assert not torch.equal(output1, output2)
+
+model.ifEnableUserTRFGen = False
+output3 = model(x, timeinfo)
+print(output3.shape)
+assert torch.equal(output1, output3)
