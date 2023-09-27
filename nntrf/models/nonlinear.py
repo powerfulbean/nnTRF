@@ -23,7 +23,12 @@ class CausalConv(torch.nn.Module):
         super().__init__()
         self.nKernel = nKernel
         self.dilation = dilation
-        self.conv = torch.nn.Conv1d(nInChan, nOutChan, nKernel, dilation = dilation)
+        self.conv = torch.nn.Conv1d(
+            nInChan, 
+            nOutChan, 
+            nKernel, 
+            dilation = dilation
+        )
     
     def forward(self,x):
         '''
@@ -59,7 +64,8 @@ class TRFAligner(torch.nn.Module):
         '''
         nWin = TRFs.shape[1]
         outDim = TRFs.shape[2]
-        respUnfold = TRFs.permute((2,1,0)) #TRFs.T #torch.unsqueeze(scrchTRFs,-1) # (outDim,  nWin, nSeq)
+        # (outDim,  nWin, nSeq)
+        respUnfold = TRFs.permute((2,1,0)) #TRFs.T #torch.unsqueeze(scrchTRFs,-1) 
         if sourceIdx[-1] >= nRealLen:
             nRealLen = sourceIdx[-1] + 1
         # print(outDim,nWin,nRealLen,respUnfold.shape,sourceIdx)
@@ -69,7 +75,8 @@ class TRFAligner(torch.nn.Module):
         self.cache = self.cache.view(1,-1,nRealLen) # (1, outDim*nWin, nRealLen)
         foldOutputSize = (nRealLen + nWin - 1, 1)
         foldKernelSize = (nWin, 1)
-        output = fold(self.cache,foldOutputSize,foldKernelSize)#(1,outDim,foldOutputSize,1)
+        #(1,outDim,foldOutputSize,1)
+        output = fold(self.cache,foldOutputSize,foldKernelSize)
         targetTensor = output[0,:,:nRealLen,0]
         return targetTensor
 
@@ -114,7 +121,8 @@ class FourierFuncTRF(torch.nn.Module):
         self.T = self.nLag - 1
         self.device = device
         maxN = nBasis // 2
-        self.seqN = torch.arange(1,maxN+1,device = self.device).reshape(-1,1) # (maxN,1)
+        # (maxN,1)
+        self.seqN = torch.arange(1,maxN+1,device = self.device).reshape(-1,1)
 
     def fitTRFs(self,TRFs):
         self.TRFs[:,:,:] = torch.from_numpy(TRFs).to(self.device)[:,:,:]
@@ -136,7 +144,12 @@ class FourierFuncTRF(torch.nn.Module):
                 assert T == self.T
                 fd_basis_s.append(fd_basis)
                 
-        out = self.vecFourierSum(self.nBasis,self.T,torch.arange(0,self.nLag).view(1,1,1,-1).to(self.device),self.coefs)[0]
+        out = self.vecFourierSum(
+            self.nBasis,
+            self.T,
+            torch.arange(0,self.nLag).view(1,1,1,-1).to(self.device),
+            self.coefs
+        )[0]
         for i in range(self.nInChan):
             for j in range(self.nOutChan):
                 fd_basis = fd_basis_s[i*self.nOutChan + j]
@@ -164,14 +177,18 @@ class FourierFuncTRF(torch.nn.Module):
         coefs = coefs.unsqueeze(-1) #(nInChan,nOutChan,nBasis,1)
         const0 = self.phi0(T)
         maxN = nBasis // 2
-        # seqN = torch.arange(1,maxN+1,device = self.device).reshape(-1,1) # (maxN,1)
+        # seqN = torch.arange(1,maxN+1,device = self.device).reshape(-1,1) 
+        # (maxN,1)
         seqN = self.seqN
         print(torch.cuda.memory_allocated()/1024/1024)
         constSin = self.phi2n_1(seqN,T,t) # (nSeq, nInChan, nOutChan, maxN, nLag)
         constCos = self.phi2n(seqN, T, t) # (nSeq, nInChan, nOutChan, maxN, nLag)
         print(torch.cuda.memory_allocated()/1024/1024)
         # (nSeq, nInChan, nOutChan, maxN * 2, nLag)
-        constN = torch.stack([constSin,constCos],axis = -2).reshape(*t.shape[0:3],2*maxN,-1)
+        constN = torch.stack(
+            [constSin,constCos],
+            axis = -2
+        ).reshape(*t.shape[0:3],2*maxN,-1)
         print(torch.cuda.memory_allocated()/1024/1024)
         # constN = constN.unsqueeze(1).unsqueeze(1) # (nSeq,1,1,maxN * 2, nLag)
         # (nSeq,nInChan,nOutChan, nLag)
@@ -192,7 +209,12 @@ class FourierFuncTRF(torch.nn.Module):
         fig.suptitle('top: original TRF, bottom: reconstructed TRF')
         nInChan = self.nInChan
         nOutChan = self.nOutChan
-        FTRFs = self.vecFourierSum(self.nBasis,self.T,torch.arange(0,self.nLag).view(1,1,1,-1).to(self.device),self.coefs)[0]
+        FTRFs = self.vecFourierSum(
+            self.nBasis,
+            self.T,
+            torch.arange(0,self.nLag).view(1,1,1,-1).to(self.device),
+            self.coefs
+        )[0]
         for i in range(nInChan):
             for j in range(nOutChan):
                 TRF = self.TRFs[i,:,j].cpu()
@@ -240,7 +262,13 @@ class FuncTRFsGen(torch.nn.Module):
         self.featExtracter = featExtracter
         self.nMiddleParam = len(mode.split(','))
         self.device = device
-        self.funcTRF = FourierFuncTRF(inDim, outDim, nWin + 2 * limitOfShift_idx, nBasis,device=device)
+        self.funcTRF = FourierFuncTRF(
+            inDim, 
+            outDim, 
+            nWin + 2 * limitOfShift_idx, 
+            nBasis,
+            device=device
+        )
 
         if featExtracter is None:
             inDim, outDim, device = self.expectedInOutDimOfFeatExtracter()
@@ -281,7 +309,8 @@ class FuncTRFsGen(torch.nn.Module):
         '''
         paramSeqs = self.featExtracter(x)
         nSeq, nChan = paramSeqs.shape
-        paramSeqs = paramSeqs.view(nSeq,self.inDim,1,-1) #(nSeq, self.inDim, 1, nMiddleParam)
+        #(nSeq, self.inDim, 1, nMiddleParam)
+        paramSeqs = paramSeqs.view(nSeq,self.inDim,1,-1) 
         # nBatch,nSeq,nChan = paramSeqs.shape
         midParamList = self.mode.split(',')
         nParamMiss = 0
@@ -312,7 +341,8 @@ class FuncTRFsGen(torch.nn.Module):
             cIdx = midParamList.index('c')
             cSeq = self.pickParam(paramSeqs, cIdx)
             #two reasons, cSeq must be larger than 0; 
-            #if 1 is the optimum, abs will have two x for the optimum, which is not stable 
+            #if 1 is the optimum, abs will have two x for the optimum, 
+            # which is not stable 
             cSeq =  1 + cSeq
             cSeq = torch.maximum(cSeq, torch.tensor(0.5))
             cSeq = torch.minimum(cSeq, torch.tensor(1.4))
@@ -321,9 +351,11 @@ class FuncTRFsGen(torch.nn.Module):
             cSeq = 1
 
         assert (len(midParamList) + nParamMiss) == 3
-        nSeq = self.lagIdxs_ts.view(1,1,1,-1) + self.limitOfShift_idx #(1,1,1,nLag)
+        nSeq = self.lagIdxs_ts.view(1,1,1,-1) + self.limitOfShift_idx 
+        #(1,1,1,nLag)
         
-        nonLinTRFs = aSeq * self.funcTRF( cSeq * ( nSeq -  bSeq) ) #(nSeq,self.inDim,nLag,self.outDim)
+        nonLinTRFs = aSeq * self.funcTRF( cSeq * ( nSeq -  bSeq) ) 
+        #(nSeq,self.inDim,nLag,self.outDim)
 
         TRFs = nonLinTRFs.sum(1) #(nSeq,nLag,self.outDim)
 
@@ -363,7 +395,12 @@ class ASTRF(torch.nn.Module):
         self.lagTimes = Idxs2msec(self.lagIdxs,fs)
         nWin = len(self.lagTimes)
         self.nWin = nWin
-        self.ltiTRFsGen = LTITRFGen(inDim,nWin,outDim,ifAddBiasInForward=False).to(device)
+        self.ltiTRFsGen = LTITRFGen(
+            inDim,
+            nWin,
+            outDim,
+            ifAddBiasInForward=False
+        ).to(device)
         self.trfsGen = trfsGen if trfsGen is None else trfsGen.to(device)
         self.fs = fs
 
@@ -381,7 +418,9 @@ class ASTRF(torch.nn.Module):
 
     def setTRFsGen(self, trfsGen):
         self.trfsGen = trfsGen.to(self.device)
-        self.bias = torch.nn.Parameter(torch.ones(self.outDim, device = self.device))
+        self.bias = torch.nn.Parameter(
+            torch.ones(self.outDim, device = self.device)
+        )
         fan_in = self.inDim * self.nWin
         bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
         torch.nn.init.uniform_(self.bias, -bound, bound)
@@ -429,7 +468,8 @@ class ASTRF(torch.nn.Module):
     def forward(self, x, timeinfo):
         output = list()
         for idx,_ in enumerate(x):
-            #need to do this for every batch because (I am lazy) they have different tIntvl Information
+            #need to do this for every batch because 
+            # (I am lazy) they have different tIntvl Information
             predForBatch = self.oneOfBatch(x[idx],timeinfo[idx])
             output.append(predForBatch)
         return seqLast_pad_zero(output)#torch.stack(output,0)
