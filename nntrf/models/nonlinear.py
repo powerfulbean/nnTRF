@@ -253,7 +253,7 @@ class FuncTRFsGen(torch.nn.Module):
         fs,
         limitOfShift_idx = 7,
         nBasis = 21, 
-        mode = 'a,b',
+        mode = '',
         featExtracter = None,
         auxInDim = 0,
         device = 'cpu'
