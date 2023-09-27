@@ -60,6 +60,8 @@ model.setTRFsGen(trfsGen)
 model.ifEnableUserTRFGen = True
 model = model.eval()
 
+trf.times = trf.times[7:-7]
+trf.weights = trf.weights[:,7:-7,:]
 predMTRF = trf.predict(stimulus)
 predMTRF = np.stack(predMTRF, axis = 0)
 x = torch.stack([torch.tensor(i.T) for i in stimulus], dim = 0).to(device).float()
@@ -70,6 +72,7 @@ with torch.no_grad():
     predNNTRF = model(x, timeinfo).cpu().detach().permute(0,2,1).numpy()
 # print(predNNTRF, predMTRF)
 
+assert np.allclose(predNNTRF, predMTRF, atol = 1e-1)
 from scipy.stats import pearsonr
 nBatch, nSeq, nChan = predNNTRF.shape
 rs = []
@@ -78,9 +81,9 @@ for b in range(nBatch):
         r = pearsonr(predNNTRF[b,:,c], predMTRF[b, :, c])[0]
         rs.append(r)
 print(np.mean(rs))
-
+assert np.mean(rs) > 0.999
 with torch.no_grad():
     model.trfsGen.funcTRF.saveMem = True
     predNNTRF2 = model(x, timeinfo).cpu().detach().permute(0,2,1).numpy()
-print(predNNTRF, predNNTRF2)
+# print(predNNTRF, predNNTRF2)
 assert np.allclose(predNNTRF, predNNTRF2, atol = 1e-6)
