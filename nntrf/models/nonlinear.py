@@ -5,6 +5,10 @@ import skfda
 from scipy.stats import pearsonr
 from torch.nn.functional import pad, fold
 from .linear import msec2Idxs, Idxs2msec
+try:
+    from matplotlib import pyplot as plt
+except:
+    plt = None
 
 def seqLast_pad_zero(seq):
     maxLen = max([i.shape[-1] for i in seq])
@@ -155,20 +159,24 @@ class FourierFuncTRF(torch.nn.Module):
     def vecFourierSum(self,nBasis, T, t,coefs):
         #coefs: (nInChan,nOutChan,nBasis)
         #t: (nSeq, nInChan, nOutChan, nLag)
-
+        print(torch.cuda.memory_allocated()/1024/1024)
         t = t.unsqueeze(-2) #(nSeq, nInChan, nOutChan,1,nLag)
         coefs = coefs.unsqueeze(-1) #(nInChan,nOutChan,nBasis,1)
         const0 = self.phi0(T)
         maxN = nBasis // 2
         # seqN = torch.arange(1,maxN+1,device = self.device).reshape(-1,1) # (maxN,1)
         seqN = self.seqN
+        print(torch.cuda.memory_allocated()/1024/1024)
         constSin = self.phi2n_1(seqN,T,t) # (nSeq, nInChan, nOutChan, maxN, nLag)
         constCos = self.phi2n(seqN, T, t) # (nSeq, nInChan, nOutChan, maxN, nLag)
+        print(torch.cuda.memory_allocated()/1024/1024)
         # (nSeq, nInChan, nOutChan, maxN * 2, nLag)
         constN = torch.stack([constSin,constCos],axis = -2).reshape(*t.shape[0:3],2*maxN,-1)
+        print(torch.cuda.memory_allocated()/1024/1024)
         # constN = constN.unsqueeze(1).unsqueeze(1) # (nSeq,1,1,maxN * 2, nLag)
         # (nSeq,nInChan,nOutChan, nLag)
         out =  const0 * coefs[...,0,:] + (constN * coefs[...,1:,:]).sum(-2)
+        print(torch.cuda.memory_allocated()/1024/1024)
         return out.permute(0,1,3,2)
     
     def forward(self,x):
@@ -178,6 +186,8 @@ class FourierFuncTRF(torch.nn.Module):
         return out
         
     def visResult(self):
+        if plt is None:
+            raise ValueError('matplotlib should be installed')
         fig, axs = plt.subplots(2)
         fig.suptitle('top: original TRF, bottom: reconstructed TRF')
         nInChan = self.nInChan
@@ -237,6 +247,17 @@ class FuncTRFsGen(torch.nn.Module):
             self.featExtracter = CausalConv(inDim, outDim, 2).to(device)
 
         self.limitOfShift_idx = torch.tensor(limitOfShift_idx)
+
+    @property
+    def extendedTimeLagRange(self):
+        minLagIdx = self.lagIdxs[0]
+        maxLagIdx = self.lagIdxs[-1]
+        left = np.arange(minLagIdx - self.limitOfShift_idx, minLagIdx)
+        right = np.arange(maxLagIdx + 1, maxLagIdx + 1 + self.limitOfShift_idx)
+        extLag_idx = np.concatenate([left, self.lagIdxs, right])
+        assert len(extLag_idx) == self.nWin + 2 * self.limitOfShift_idx
+        timelags = Idxs2msec(extLag_idx, self.fs)
+        return timelags[0], timelags[-1]
 
     def expectedInOutDimOfFeatExtracter(self):
         inDim = self.inDim + self.auxInDim
@@ -414,11 +435,15 @@ class ASTRF(torch.nn.Module):
         return seqLast_pad_zero(output)#torch.stack(output,0)
 
     def oneOfBatch(self, x, timeinfo):
-        assert timeinfo.ndim == 2
-        assert timeinfo.shape[0] ==2
-        assert timeinfo.shape[1] == x.shape[1]
-        nLen = torch.ceil(timeinfo[0][-1] * self.fs).long() + self.nWin
-        vIdxStart = torch.round(timeinfo[0,:] * self.fs).long()
+        if timeinfo is not None:
+            assert timeinfo.ndim == 2
+            assert timeinfo.shape[0] ==2
+            assert timeinfo.shape[1] == x.shape[1]
+            nLen = torch.ceil(timeinfo[0][-1] * self.fs).long() + self.nWin
+            vIdxStart = torch.round(timeinfo[0,:] * self.fs).long()
+        else:
+            nLen = x.shape[1]
+            vIdxStart = torch.tensor(np.arange(nLen))
         vIdxEnd = None #torch.round(tIntvl[1,:] * self.fs).long()
         # ltiTRF = self.ltiTRFsGen.weight #(inDim, nWin,outDim)
         ltiTRFBias = self.ltiTRFsGen.bias
