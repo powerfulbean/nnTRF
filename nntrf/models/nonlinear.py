@@ -259,7 +259,7 @@ class FuncTRFsGen(torch.nn.Module):
         device = 'cpu'
     ):
         super().__init__()
-        assert mode.replace('+-','') in ['a','b','a,b','a,b,c']
+        assert mode.replace('+-','') in ['','a','b','a,b','a,b,c']
         self.inDim = inDim
         self.auxInDim = auxInDim
         self.outDIm = outDim
