@@ -58,6 +58,7 @@ fig = trfsGen.funcTRF.visResult()
 fig.savefig('funcTRF.png')
 model.setTRFsGen(trfsGen)
 model.ifEnableUserTRFGen = True
+model = model.eval()
 
 predMTRF = trf.predict(stimulus)
 predMTRF = np.stack(predMTRF, axis = 0)
@@ -65,5 +66,14 @@ x = torch.stack([torch.tensor(i.T) for i in stimulus], dim = 0).to(device).float
 nBatch = x.shape[0]
 nSeq = x.shape[2]
 timeinfo = [None for i in range(nBatch)]
-predNNTRF = model(x, timeinfo).cpu().detach().permute(0,2,1).numpy()
+with torch.no_grad():
+    predNNTRF = model(x, timeinfo).cpu().detach().permute(0,2,1).numpy()
+print(predNNTRF, predMTRF)
+
+from scipy.stats import pearsonr
+nBatch, nSeq, nChan = predNNTRF.shape
+for b in range(nBatch):
+        for c in range(nChan):
+            r = pearsonr(predNNTRF[b,:,c], predMTRF[b, :, c])[0]
+            print(r)
 # assert np.allclose(predNNTRF, predMTRF, atol = 1e-6)

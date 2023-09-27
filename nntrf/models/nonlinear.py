@@ -171,8 +171,10 @@ class FourierFuncTRF(torch.nn.Module):
     
     def vecFourierSum(self,nBasis, T, t,coefs):
         #coefs: (nInChan,nOutChan,nBasis)
-        #t: (nSeq, nInChan, nOutChan, nLag)
-        print(torch.cuda.memory_allocated()/1024/1024)
+        #t: (nSeq, nInChan, nOutChan, nLag) 
+        #if nOutChan of t is just 1, which means we share
+        #the same time-axis transformation for all channels
+        # print(torch.cuda.memory_allocated()/1024/1024)
         t = t.unsqueeze(-2) #(nSeq, nInChan, nOutChan,1,nLag)
         coefs = coefs.unsqueeze(-1) #(nInChan,nOutChan,nBasis,1)
         const0 = self.phi0(T)
@@ -180,19 +182,32 @@ class FourierFuncTRF(torch.nn.Module):
         # seqN = torch.arange(1,maxN+1,device = self.device).reshape(-1,1) 
         # (maxN,1)
         seqN = self.seqN
-        print(torch.cuda.memory_allocated()/1024/1024)
+        # print(torch.cuda.memory_allocated()/1024/1024)
         constSin = self.phi2n_1(seqN,T,t) # (nSeq, nInChan, nOutChan, maxN, nLag)
         constCos = self.phi2n(seqN, T, t) # (nSeq, nInChan, nOutChan, maxN, nLag)
-        print(torch.cuda.memory_allocated()/1024/1024)
+        # print(torch.cuda.memory_allocated()/1024/1024)
+
         # (nSeq, nInChan, nOutChan, maxN * 2, nLag)
         constN = torch.stack(
             [constSin,constCos],
             axis = -2
         ).reshape(*t.shape[0:3],2*maxN,-1)
+        print(const0,[i.shape for i in [constN, coefs]])
+        memAvai,_ = torch.cuda.mem_get_info()
+        nSeq, nInChan, _, nBasis, nLag =  constN.shape
+        nBasis = nBasis + 1
+        nInChan,nOutChan,nBasis,_ = coefs.shape
+        nMemReq = nSeq * nInChan * nOutChan * nBasis * nLag * 4
         print(torch.cuda.memory_allocated()/1024/1024)
-        # constN = constN.unsqueeze(1).unsqueeze(1) # (nSeq,1,1,maxN * 2, nLag)
-        # (nSeq,nInChan,nOutChan, nLag)
-        out =  const0 * coefs[...,0,:] + (constN * coefs[...,1:,:]).sum(-2)
+        if nMemReq > memAvai * 0.9:
+            out = const0 * coefs[...,0,:]
+            for nB in range(2 * maxN):
+                out = out + constN[...,nB,:] * coefs[...,1+nB,:]
+        else:
+            # constN = constN.unsqueeze(1).unsqueeze(1)
+            # (nSeq,nInChan,nOutChan, nLag)
+            out =  const0 * coefs[...,0,:] + (constN * coefs[...,1:,:]).sum(-2)
+        
         print(torch.cuda.memory_allocated()/1024/1024)
         return out.permute(0,1,3,2)
     
@@ -356,9 +371,9 @@ class FuncTRFsGen(torch.nn.Module):
         
         nonLinTRFs = aSeq * self.funcTRF( cSeq * ( nSeq -  bSeq) ) 
         #(nSeq,self.inDim,nLag,self.outDim)
-
+        print(torch.cuda.memory_allocated()/1024/1024)
         TRFs = nonLinTRFs.sum(1) #(nSeq,nLag,self.outDim)
-
+        print(torch.cuda.memory_allocated()/1024/1024)
         return TRFs
 
 class ASTRF(torch.nn.Module):
