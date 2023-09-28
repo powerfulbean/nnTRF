@@ -10,6 +10,10 @@ try:
 except:
     plt = None
 
+
+# will extend to directly remove the existence of oneOfBatch func
+# in the future
+
 def seqLast_pad_zero(seq):
     maxLen = max([i.shape[-1] for i in seq])
     output = []
@@ -104,6 +108,48 @@ class LTITRFGen(torch.nn.Module):
             TRFs = TRFs + self.bias #(nSeq,inDim,nWin,outDim)
         TRFs = TRFs.sum(1)
         return TRFs
+
+class WordTRFEmbedGen(torch.nn.Module):
+
+    def __init__(
+        self, 
+        outDim,
+        hiddenDim,
+        tmin_ms,
+        tmax_ms,
+        fs,
+        wordsDict,
+        device
+    ):
+        super().__init__()
+        self.outDim = outDim
+        self.hiddenDim = hiddenDim
+        self.tmin_ms = tmin_ms
+        self.tmax_ms = tmax_ms
+        self.fs = fs
+        self.lagIdxs = msec2Idxs([tmin_ms,tmax_ms],fs)
+        self.lagIdxs_ts = torch.Tensor(self.lagIdxs).float().to(device)
+        self.lagTimes = Idxs2msec(self.lagIdxs,fs)
+        nWin = len(self.lagTimes)
+        self.nWin = nWin
+        self.embedding_dim = nWin * hiddenDim
+
+        self.wordsDict = wordsDict
+        self.embedding = torch.nn.Embedding(
+            len(wordsDict),
+            self.embedding_dim,
+        )
+        self.proj = torch.nn.Linear(self.hiddenDim, self.outDim)
+
+    def forward(self, words):
+        batchTokens = []
+        for ws in words:
+            tokens = []
+            for w in ws:
+                tokens.append(self.word[w])
+            batchTokens.append()
+        raise NotImplementedError
+
 
 class FourierFuncTRF(torch.nn.Module):
     
