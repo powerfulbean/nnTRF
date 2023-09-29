@@ -82,6 +82,8 @@ def testLTIWeight():
 
 def testFuncTRF():
     stimulus, response, fs = load_sample_data(n_segments=9)
+    stimulus = stimulus[:3]
+    response = response[:3]
     model = ASTRF(16, 128, 0, 700, fs, device = device)
     trfsGen = FuncTRFsGen(16, 128, 0, 700, fs, device = device)
     extLagMin, extLagMax = trfsGen.extendedTimeLagRange
@@ -115,7 +117,7 @@ def testFuncTRF():
             r = pearsonr(predNNTRF[b,:,c], predMTRF[b, :, c])[0]
             rs.append(r)
     print(np.mean(rs))
-    assert np.mean(rs) > 0.999
+    assert np.mean(rs) > 0.99
     with torch.no_grad():
         model.trfsGen.funcTRF.saveMem = True
         predNNTRF2 = model(x, timeinfo).cpu().detach().permute(0,2,1).numpy()

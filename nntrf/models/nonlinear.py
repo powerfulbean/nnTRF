@@ -233,7 +233,6 @@ class FourierFuncTRF(torch.nn.Module):
         #(nBatch, 1, 1, nSeq, maxN, nWin)
         t_input = t_input.permute(0, 1, 2, 4, 5, 3)
         signal = torch.sin(t_input) / (T/2)**0.5
-        print(signal.squeeze())
         return signal.permute(0, 1, 2, 5, 3, 4)
     
     def phi2n(self,n,T,t):
@@ -308,13 +307,13 @@ class FourierFuncTRF(torch.nn.Module):
         FTRFs = self.vecFourierSum(
             self.nBasis,
             self.T,
-            torch.arange(0,self.nLag).view(1,1,1,-1).to(self.device),
+            torch.arange(0,self.nLag).view(1,1,1,-1,1).to(self.device),
             self.coefs
-        )[0]
-        for i in range(nInChan):
-            for j in range(nOutChan):
-                TRF = self.TRFs[i,:,j].cpu()
-                FTRF = FTRFs[i,:,j].cpu()
+        )[0][...,0]
+        for j in range(nOutChan):
+            for i in range(nInChan):
+                TRF = self.TRFs[j,i,:].cpu()
+                FTRF = FTRFs[j,i,:].cpu()
                 axs[0].plot(TRF)
                 axs[1].plot(FTRF)
         return fig
