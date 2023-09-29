@@ -37,12 +37,13 @@ def testCanRun():
         vec[vIdx,:] = x[idx].cpu().numpy().T
         trfInput.append(vec)
     trfOutput = trf.predict(trfInput)
-    output1 = model(x, timeinfo).cpu().detach().numpy()
+    output1 = model(x, timeinfo)
+    output11 = output1.cpu().detach().numpy()
     for idx, out in enumerate(trfOutput):
         t_nLen = out.shape[0]
-        print(np.allclose(out, output1[idx].T[:t_nLen]))
-        print(np.allclose(out, output1[idx].T[:t_nLen], atol = 1e-11))
-        assert np.allclose(out, output1[idx].T[:t_nLen])
+        print(np.allclose(out, output11[idx].T[:t_nLen]))
+        print(np.allclose(out, output11[idx].T[:t_nLen], atol = 1e-11))
+        assert np.allclose(out, output11[idx].T[:t_nLen])
 
     trfsGen = FuncTRFsGen(1, 128, 0, 700, 64, device = device)
     model.setTRFsGen(trfsGen)
@@ -117,4 +118,5 @@ def testFuncTRF():
     # print(predNNTRF, predNNTRF2)
     assert np.allclose(predNNTRF, predNNTRF2, atol = 1e-6)
 
-testCanRun()
+# testCanRun()
+testLTIWeight()

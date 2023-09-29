@@ -574,20 +574,23 @@ class ASTRF(torch.nn.Module):
         nRealLens = []
         trfStartIdxs = []
         for ix, xi in enumerate(x):
-            assert timeinfo[ix].shape[-1] == xi.shape[-1]
-            nSeqs.append(xi.shape[-1])
-            nLen = torch.ceil(timeinfo[ix][0][-1] * self.fs).long() + self.nWin
-            startIdx = torch.round(timeinfo[ix][0,:] * self.fs).long() + self.lagIdxs[0]
+            nLenXi = xi.shape[-1]
+            if timeinfo is not None:
+                assert timeinfo[ix].shape[-1] == xi.shape[-1]
+                nLen = torch.ceil(timeinfo[ix][0][-1] * self.fs).long() + self.nWin
+                startIdx = torch.round(timeinfo[ix][0,:] * self.fs).long() + self.lagIdxs[0]
+            else:
+                nLen = nLenXi
+                startIdx = torch.tensor(np.arange(nLen)) + self.lagIdxs[0]
+            nSeqs.append(nLenXi)
             nRealLens.append(nLen)
             trfStartIdxs.append(startIdx)
 
         nGlobLen = max(nRealLens)
         x = seqLast_pad_zero(x)
         trfStartIdxs = seqLast_pad_zero(trfStartIdxs, value = -1)
-        print(x, trfStartIdxs)
         #(nBatch, outDim, nWin, nSeq)
         TRFs = self.getTRFs(x)
-        print(TRFs.shape)
 
         ##(nBatch,outDim,nRealLen)
         targetTensor = self.trfAligner(TRFs,trfStartIdxs,nGlobLen)
