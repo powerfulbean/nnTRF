@@ -14,11 +14,11 @@ except:
 # will extend to directly remove the existence of oneOfBatch func
 # in the future
 
-def seqLast_pad_zero(seq):
+def seqLast_pad_zero(seq, value = 0):
     maxLen = max([i.shape[-1] for i in seq])
     output = []
     for i in seq:
-        output.append(pad(i,(0,maxLen - i.shape[-1])))
+        output.append(pad(i,(0,maxLen - i.shape[-1]), value = value))
     return torch.stack(output,0)
 
 class CausalConv(torch.nn.Module):
@@ -36,12 +36,13 @@ class CausalConv(torch.nn.Module):
     
     def forward(self,x):
         '''
-        x: (nChan, nSeq)
+        x: (nBatch, nChan, nSeq)
         '''
-        # padding buttom
+        # padding left
         x = torch.nn.functional.pad(x,(( self.dilation * (self.nKernel-1) ,0)))
+
+        #(nBatch, nOutChan, nSeq)
         x = self.conv(x)
-        x = x.swapaxes(-1,-2) # (nSeq, nOut)
         return x
 
 class TRFAligner(torch.nn.Module):
@@ -55,9 +56,9 @@ class TRFAligner(torch.nn.Module):
         in-place operation
         Parameters
         ----------
-        TRFs : TYPE, (nSeq, nWin, outDim)
+        TRFs : TYPE, (nBatch, outDim, nWin, nSeq)
             tensors output by DyTimeEncoder.
-        sourceIdx : TYPE, (nSeq * srate)
+        sourceIdx : TYPE, (nBatch, nSeq)
             index of dyImpulse tensor to be assigned to target tensor
         nRealLen: 
             the length of the target
@@ -66,22 +67,31 @@ class TRFAligner(torch.nn.Module):
         None.
 
         '''
-        nWin = TRFs.shape[1]
-        outDim = TRFs.shape[2]
-        # (outDim,  nWin, nSeq)
-        respUnfold = TRFs.permute((2,1,0)) #TRFs.T #torch.unsqueeze(scrchTRFs,-1) 
-        if sourceIdx[-1] >= nRealLen:
-            nRealLen = sourceIdx[-1] + 1
+        nBatch, outDim, nWin, nSeq = TRFs.shape
+        # (nBatch, outDim, nWin, nSeq)
+        respUnfold = TRFs 
+        maxSrcIdx = torch.max(sourceIdx[:, -1])
+        if maxSrcIdx >= nRealLen:
+            nRealLen = maxSrcIdx + 1
         # print(outDim,nWin,nRealLen,respUnfold.shape,sourceIdx)
-        self.cache = torch.zeros((outDim,nWin,nRealLen),device = self.device)
-        self.cache[:,:,sourceIdx] = respUnfold #(outDim,nWin,nRealLen)
-        self.cache = self.cache.unsqueeze(0) #(1,outDim, nWin, nRealLen)
-        self.cache = self.cache.view(1,-1,nRealLen) # (1, outDim*nWin, nRealLen)
+        self.cache = torch.zeros((nBatch, outDim,nWin,nRealLen),device = self.device)
+
+        idxWin = torch.arange(nWin)
+        idxChan = torch.arange(outDim)
+        idxBatch = torch.arange(nBatch)
+        idxWin = idxWin[:, None]
+        idxChan = idxChan[:,None, None]
+        idxBatch = idxBatch[:, None, None, None]
+        sourceIdx = sourceIdx[:,None, None,:]
+
+        self.cache[idxBatch, idxChan, idxWin, sourceIdx] = respUnfold #(nBatch, outDim,nWin,nRealLen)
+        self.cache = self.cache.view(nBatch,-1,nRealLen) # (nBatch, outDim*nWin, nRealLen)
         foldOutputSize = (nRealLen + nWin - 1, 1)
         foldKernelSize = (nWin, 1)
-        #(1,outDim,foldOutputSize,1)
+        #(nBatch,outDim,foldOutputSize,1)
         output = fold(self.cache,foldOutputSize,foldKernelSize)
-        targetTensor = output[0,:,:nRealLen,0]
+        #(nBatch,outDim,nRealLen)
+        targetTensor = output[:,:,:nRealLen,0]
         return targetTensor
 
 class LTITRFGen(torch.nn.Module):
@@ -90,7 +100,7 @@ class LTITRFGen(torch.nn.Module):
         self.inDim = inDim
         self.nWin = nWin
         self.outDim = outDim
-        self.weight = torch.nn.Parameter(torch.ones(inDim,nWin,outDim))
+        self.weight = torch.nn.Parameter(torch.ones(outDim,inDim,nWin))
         self.bias = torch.nn.Parameter(torch.ones(outDim))
         k = 1 / (inDim * nWin)
         lower = - np.sqrt(k)
@@ -100,13 +110,13 @@ class LTITRFGen(torch.nn.Module):
         self.ifAddBiasInForward = ifAddBiasInForward
 
     def forward(self,x):
-        # x: (inDim,nSeq)
-        kernelsTemp =  self.weight.unsqueeze(0) #(1, inDim, nWin,outDim)
-        xTemp = x.T.view(-1,self.inDim,1,1) #(nSeq, inDim, 1, 1) 
-        TRFs = xTemp * kernelsTemp 
+        # x: (nBatch, inDim,nSeq)
+        kernelsTemp =  self.weight[None, ..., None] #(1, outDim, inDim, nWin, 1) 
+        xTemp = x[:, None, :, None, :] #(nBatch, 1, inDim, 1, nSeq)
+        TRFs = xTemp * kernelsTemp  #(nBatch, outDim, inDim, nWin, nSeq)
         if self.ifAddBiasInForward:
-            TRFs = TRFs + self.bias #(nSeq,inDim,nWin,outDim)
-        TRFs = TRFs.sum(1)
+            TRFs = TRFs + self.bias[..., None, None, None] #(nBatch, outDim, inDim, nWin, nSeq)
+        TRFs = TRFs.sum(2) #(nBatch, outDim, nWin, nSeq)
         return TRFs
 
 class WordTRFEmbedGen(torch.nn.Module):
@@ -160,24 +170,26 @@ class FourierFuncTRF(torch.nn.Module):
         self.nInChan = nInChan
         self.nOutChan = nOutChan
         self.nLag = nLag
-        coefs = torch.empty((nInChan,nOutChan,nBasis),device=device)
-        TRFs = torch.empty((nInChan,nLag,nOutChan),device=device)
+        coefs = torch.empty((nOutChan, nInChan, nBasis),device=device)
+        TRFs = torch.empty((nOutChan, nInChan, nLag),device=device)
         self.register_buffer('coefs', coefs)
         self.register_buffer('TRFs',TRFs)
         self.T = self.nLag - 1
         self.device = device
         maxN = nBasis // 2
-        # (maxN,1)
-        self.seqN = torch.arange(1,maxN+1,device = self.device).reshape(-1,1)
+        # (maxN)
+        self.seqN = torch.arange(1,maxN+1,device = self.device)
         self.saveMem = False
 
     def fitTRFs(self,TRFs):
-        self.TRFs[:,:,:] = torch.from_numpy(TRFs).to(self.device)[:,:,:]
+        TRFs = torch.from_numpy(TRFs)
+        TRFs = TRFs.permute(2, 0, 1)
+        self.TRFs[:,:,:] = TRFs.to(self.device)[:,:,:]
         fd_basis_s = []
         grid_points = list(range(self.nLag))
-        for i in range(self.nInChan):
-            for j in range(self.nOutChan):
-                TRF = TRFs[i,:,j]
+        for j in range(self.nOutChan):
+            for i in range(self.nInChan):
+                TRF = TRFs[j, i, :]
                 fd = skfda.FDataGrid(
                     data_matrix=TRF,
                     grid_points=grid_points,
@@ -185,7 +197,7 @@ class FourierFuncTRF(torch.nn.Module):
                 basis = skfda.representation.basis.Fourier(n_basis = self.nBasis)
                 fd_basis = fd.to_basis(basis)
                 coef = fd_basis.coefficients[0]
-                self.coefs[i,j,:] = torch.from_numpy(coef).to(self.device)
+                self.coefs[j, i, :] = torch.from_numpy(coef).to(self.device)
                 
                 T = fd_basis.basis.period
                 assert T == self.T
@@ -211,53 +223,64 @@ class FourierFuncTRF(torch.nn.Module):
         return 1 / ((2 ** 0.5) * ((T/2) ** 0.5))
 
     def phi2n_1(self,n,T,t):
+        #n: (maxN)
+        #t: (nBatch, 1, 1, nWin, nSeq, 1)
         return torch.sin(2 * torch.pi * t * n / T) / (T/2)**0.5
     
     def phi2n(self,n,T,t):
+        #n: (maxN)
+        #t: (nBatch, 1, 1, nWin, nSeq, 1)
         return torch.cos(2 * torch.pi * t * n / T) / (T/2)**0.5
     
     def vecFourierSum(self,nBasis, T, t,coefs):
-        #coefs: (nInChan,nOutChan,nBasis)
-        #t: (nSeq, tInChan, tOutChan, nLag) 
-        #if tChan of t is just 1, which means we share
-        #the same time-axis transformation for all channels
+        #coefs: (nOutChan, nInChan, nBasis)
+        #t: (nBatch, 1, 1, nWin, nSeq)
+        #   if tChan of t is just 1, which means we share
+        #   the same time-axis transformation for all channels
+        #return: (nBatch, outDim, inDim, nWin, nSeq)
 
-        t = t.unsqueeze(-2) #(nSeq, tInChan, tOutChan,1,nLag)
-        coefs = coefs.unsqueeze(-1) #(nInChan,nOutChan,nBasis,1)
+        #(nBatch, 1, 1, nWin, nSeq, 1)
+        t = t[..., None]
+
         const0 = self.phi0(T)
         maxN = nBasis // 2
-        # seqN = torch.arange(1,maxN+1,device = self.device).reshape(-1,1) 
-        # (maxN,1)
+        # (maxN)
         seqN = self.seqN
-        constSin = self.phi2n_1(seqN,T,t) # (nSeq, nInChan, nOutChan, maxN, nLag)
-        constCos = self.phi2n(seqN, T, t) # (nSeq, nInChan, nOutChan, maxN, nLag)
+        # (nBatch, 1, 1, nWin, nSeq, maxN)
+        constSin = self.phi2n_1(seqN, T, t) 
+        constCos = self.phi2n(seqN, T, t)
 
-        # (nSeq, nInChan, nOutChan, maxN * 2, nLag)
-        constN = torch.stack(
+        # (nBatch, 1, 1, nWin, nSeq, 2 * maxN)
+        constN = torch.cat(
             [constSin,constCos],
-            axis = -2
-        ).reshape(*t.shape[0:3],2*maxN,-1)
+            axis = -1
+        )
         # print(const0,[i.shape for i in [constN, coefs]])
         memAvai,_ = torch.cuda.mem_get_info()
-        nSeq, nInChan, _, nBasis, nLag =  constN.shape
+
+        nBatch, _, _, nWin, nSeq, nBasis =  constN.shape
+        nOutChan, nInChan, nBasis = coefs.shape
+
+        #(nOutChan, nInChan, 1, 1, nBasis)
+        coefs = coefs[:, :, None, None, :]
         nBasis = nBasis + 1
-        nInChan,nOutChan,nBasis,_ = coefs.shape
-        nMemReq = nSeq * nInChan * nOutChan * nBasis * nLag * 4
+        nMemReq = nBatch * nSeq * nInChan * nOutChan * nBasis * nWin * 4 # 4 indicates 4 bytes
         # print(torch.cuda.memory_allocated()/1024/1024)
         if nMemReq > memAvai * 0.9 or self.saveMem:
-            out = const0 * coefs[...,0,:]
+            out = const0 * coefs[...,0]
             for nB in range(2 * maxN):
-                out = out + constN[...,nB,:] * coefs[...,1+nB,:]
+                out = out + constN[...,nB] * coefs[...,1+nB]
         else:
-            # constN = constN.unsqueeze(1).unsqueeze(1)
-            # (nSeq,nInChan,nOutChan, nLag)
-            out =  const0 * coefs[...,0,:] + (constN * coefs[...,1:,:]).sum(-2)
+            # (nbatch, nOutChan, nInChan, nWin, nSeq, nBasis)
+            out =  const0 * coefs[...,0] + (constN * coefs[...,1:]).sum(-1)
         
         # print(torch.cuda.memory_allocated()/1024/1024)
-        return out.permute(0,1,3,2)
+        # (nBatch, outDim, inDim, nWin, nSeq)
+        return out
     
     def forward(self,x):
-        # output = torch.empty(self.nInChan,self.nLag,self.nOutChan)
+        # x: (nBatch, 1, 1, nWin, nSeq)\
+        # return: 
         coefs = self.coefs
         out = self.vecFourierSum(self.nBasis,self.T,x,coefs)
         return out
@@ -360,39 +383,42 @@ class FuncTRFsGen(torch.nn.Module):
         return self
     
     def pickParam(self,paramSeqs,idx):
-        #paramSeqs: (nSeq, nChan)
-        return paramSeqs[...,idx:idx+1]
+        #paramSeqs: (nBatch, nMiddleParam, 1, 1, nSeq)
+        return paramSeqs[:, idx:idx+1, ...]
     
     def forward(self, x):
         '''
-        x: (inDim,nSeq)
+        x: (nBatch, inDim, nSeq)
+        output: TRFs (nBatch, outDim, nWin, nSeq)
         '''
+        #(nBatch, nMiddleParam, nSeq)
         paramSeqs = self.featExtracter(x)
-        nSeq, nChan = paramSeqs.shape
-        #(nSeq, self.inDim, 1, nMiddleParam)
-        paramSeqs = paramSeqs.view(nSeq,self.inDim,1,-1) 
-        # nBatch,nSeq,nChan = paramSeqs.shape
+        nBatch, nMiddleParam, nSeq= paramSeqs.shape
+
+        #(nBatch, nMiddleParam, 1, 1, nSeq)
+        paramSeqs = paramSeqs[:, :, None, None, :]
         midParamList = self.mode.split(',')
         if midParamList == ['']:
             midParamList = []
         nParamMiss = 0
         if 'a' in midParamList:
             aIdx = midParamList.index('a')
-            aSeq = self.pickParam(paramSeqs, aIdx) #(nSeq,self.inDim,1,1)
-            # aSeq = aSeq.permute(0,1,3,2) #(nSeq,self.inDim,1,1)
+            #(nBatch, 1, 1, 1, nSeq)
+            aSeq = self.pickParam(paramSeqs, aIdx) 
             aSeq = torch.abs(aSeq)
         elif '+-a' in midParamList:
             aIdx = midParamList.index('+-a')
-            aSeq = self.pickParam(paramSeqs, aIdx) #(nSeq,self.inDim,1,1)
-            # aSeq = aSeq.permute(0,1,3,2) #(nSeq,self.inDim,1,1)
+            #(nBatch, 1, 1, 1, nSeq)
+            aSeq = self.pickParam(paramSeqs, aIdx)
         else:
             nParamMiss += 1
-            aSeq = x.T 
-            aSeq = aSeq.view(*aSeq.shape, 1, 1) #: (nSeq,self.inDim,1,1) 
+            #(nBatch, 1, inDim, 1, nSeq)
+            aSeq = x[:, None, :, None, :]
         
         if 'b' in midParamList:
             bIdx = midParamList.index('b')
-            bSeq = self.pickParam(paramSeqs, bIdx) #(nSeq,self.inDim,1,1)
+            #(nBatch, 1, 1, 1, nSeq)
+            bSeq = self.pickParam(paramSeqs, bIdx) 
             bSeq = torch.maximum(bSeq, - self.limitOfShift_idx)
             bSeq = torch.minimum(bSeq,   self.limitOfShift_idx)
         else:
@@ -401,6 +427,7 @@ class FuncTRFsGen(torch.nn.Module):
             
         if 'c' in midParamList:
             cIdx = midParamList.index('c')
+            #(nBatch, 1, 1, 1, nSeq)
             cSeq = self.pickParam(paramSeqs, cIdx)
             #two reasons, cSeq must be larger than 0; 
             #if 1 is the optimum, abs will have two x for the optimum, 
@@ -413,14 +440,17 @@ class FuncTRFsGen(torch.nn.Module):
             cSeq = 1
 
         assert (len(midParamList) + nParamMiss) == 3
-        nSeq = self.lagIdxs_ts.view(1,1,1,-1) + self.limitOfShift_idx 
-        #(1,1,1,nLag)
+        #(1, 1, 1, nWin, 1) 
+        nSeq = self.lagIdxs_ts[None, None, None, :, None] + self.limitOfShift_idx 
         
+        
+        #(nBatch, outDim, inDim, nWin, nSeq)
         nonLinTRFs = aSeq * self.funcTRF( cSeq * ( nSeq -  bSeq) ) 
-        #(nSeq,self.inDim,nLag,self.outDim)
-        print(torch.cuda.memory_allocated()/1024/1024)
-        TRFs = nonLinTRFs.sum(1) #(nSeq,nLag,self.outDim)
-        print(torch.cuda.memory_allocated()/1024/1024)
+        # print(torch.cuda.memory_allocated()/1024/1024)
+
+        #(nBatch, outDim, nWin, nSeq)
+        TRFs = nonLinTRFs.sum(2) #(nSeq,nLag,self.outDim)
+        # print(torch.cuda.memory_allocated()/1024/1024)
         return TRFs
 
 class ASTRF(torch.nn.Module):
@@ -498,11 +528,20 @@ class ASTRF(torch.nn.Module):
         b = b * 1/ self.fs
         w = torch.FloatTensor(w).to(self.device)
         b = torch.FloatTensor(b).to(self.device)
-        
+        w = w.permute(2, 0, 1) #(nOutChan, nInChan, nLag)
         with torch.no_grad():
             self.ltiTRFsGen.weight = torch.nn.Parameter(w)
             self.ltiTRFsGen.bias = torch.nn.Parameter(b)
         return self
+
+    def exportLTIWeights(self):
+        with torch.no_grad():
+            # (nInChan, nLag, nOutChan)
+            w = self.ltiTRFsGen.weight.cpu().detach().permute(1, 2, 0).numpy()
+            b = self.ltiTRFsGen.bias.cpu().detach().numpy().reshape(1,-1)
+        w = w * self.fs 
+        b = b * self.fs
+        return w, b
 
     @property
     def ifEnableUserTRFGen(self):
@@ -528,13 +567,38 @@ class ASTRF(torch.nn.Module):
         self.ltiTRFsGen.bias.grad = torch.zeros_like(self.ltiTRFsGen.bias)
 
     def forward(self, x, timeinfo):
-        output = list()
-        for idx,_ in enumerate(x):
-            #need to do this for every batch because 
-            # (I am lazy) they have different tIntvl Information
-            predForBatch = self.oneOfBatch(x[idx],timeinfo[idx])
-            output.append(predForBatch)
-        return seqLast_pad_zero(output)#torch.stack(output,0)
+        #X: nBatch * [nChan, nSeq]
+        #timeinfo: nBatch * [2, nSeq]
+
+        nSeqs = []
+        nRealLens = []
+        trfStartIdxs = []
+        for ix, xi in enumerate(x):
+            assert timeinfo[ix].shape[-1] == xi.shape[-1]
+            nSeqs.append(xi.shape[-1])
+            nLen = torch.ceil(timeinfo[ix][0][-1] * self.fs).long() + self.nWin
+            startIdx = torch.round(timeinfo[ix][0,:] * self.fs).long() + self.lagIdxs[0]
+            nRealLens.append(nLen)
+            trfStartIdxs.append(startIdx)
+
+        nGlobLen = max(nRealLens)
+        x = seqLast_pad_zero(x)
+        trfStartIdxs = seqLast_pad_zero(trfStartIdxs, value = -1)
+        print(x, trfStartIdxs)
+        #(nBatch, outDim, nWin, nSeq)
+        TRFs = self.getTRFs(x)
+        print(TRFs.shape)
+
+        ##(nBatch,outDim,nRealLen)
+        targetTensor = self.trfAligner(TRFs,trfStartIdxs,nGlobLen)
+
+        if self.ifEnableUserTRFGen:
+            targetTensor = targetTensor + self.bias.view(-1,1)
+        else:
+            ltiTRFBias = self.ltiTRFsGen.bias
+            targetTensor = targetTensor + ltiTRFBias.view(-1,1)
+
+        return targetTensor
 
     def oneOfBatch(self, x, timeinfo):
         if timeinfo is not None:
