@@ -206,18 +206,20 @@ class FourierFuncTRF(torch.nn.Module):
         out = self.vecFourierSum(
             self.nBasis,
             self.T,
-            torch.arange(0,self.nLag).view(1,1,1,-1).to(self.device),
+            torch.arange(0,self.nLag).view(1,1,1,-1,1).to(self.device),
             self.coefs
-        )[0]
-        for i in range(self.nInChan):
-            for j in range(self.nOutChan):
-                fd_basis = fd_basis_s[i*self.nOutChan + j]
+        )
+        out = out[0][...,0]
+        for j in range(self.nOutChan):
+            for i in range(self.nInChan):
+                fd_basis = fd_basis_s[j*self.nInChan + i]
                 temp = fd_basis(np.arange(0,self.nLag)).squeeze()
-                curFTRF = out[i,:,j].cpu().numpy()
-                TRF = TRFs[i,:,j]
+                curFTRF = out[j, i,:].cpu().numpy()
+                TRF = TRFs[j, i,:]
+                assert np.around(pearsonr(TRF, temp)[0]) >= 0.99
                 assert np.allclose(curFTRF,temp,atol = 1e-6)
                 # print(i,j,pearsonr(TRF, curFTRF))
-                assert np.around(pearsonr(TRF, curFTRF)[0]) >= 0.99
+                
     
     def phi0(self,T):
         return 1 / ((2 ** 0.5) * ((T/2) ** 0.5))
@@ -225,12 +227,24 @@ class FourierFuncTRF(torch.nn.Module):
     def phi2n_1(self,n,T,t):
         #n: (maxN)
         #t: (nBatch, 1, 1, nWin, nSeq, 1)
-        return torch.sin(2 * torch.pi * t * n / T) / (T/2)**0.5
+
+        #(nBatch, 1, 1, nWin, nSeq, maxN)
+        t_input = 2 * torch.pi * t * n / T
+        #(nBatch, 1, 1, nSeq, maxN, nWin)
+        t_input = t_input.permute(0, 1, 2, 4, 5, 3)
+        signal = torch.sin(t_input) / (T/2)**0.5
+        print(signal.squeeze())
+        return signal.permute(0, 1, 2, 5, 3, 4)
     
     def phi2n(self,n,T,t):
         #n: (maxN)
         #t: (nBatch, 1, 1, nWin, nSeq, 1)
-        return torch.cos(2 * torch.pi * t * n / T) / (T/2)**0.5
+        #(nBatch, 1, 1, nWin, nSeq, maxN)
+        t_input = 2 * torch.pi * t * n / T
+        #(nBatch, 1, 1, nSeq, maxN, nWin)
+        t_input = t_input.permute(0, 1, 2, 4, 5, 3)
+        signal = torch.cos(t_input) / (T/2)**0.5
+        return signal.permute(0, 1, 2, 5, 3, 4)
     
     def vecFourierSum(self,nBasis, T, t,coefs):
         #coefs: (nOutChan, nInChan, nBasis)
@@ -241,7 +255,6 @@ class FourierFuncTRF(torch.nn.Module):
 
         #(nBatch, 1, 1, nWin, nSeq, 1)
         t = t[..., None]
-
         const0 = self.phi0(T)
         maxN = nBasis // 2
         # (maxN)
@@ -251,10 +264,10 @@ class FourierFuncTRF(torch.nn.Module):
         constCos = self.phi2n(seqN, T, t)
 
         # (nBatch, 1, 1, nWin, nSeq, 2 * maxN)
-        constN = torch.cat(
+        constN = torch.stack(
             [constSin,constCos],
             axis = -1
-        )
+        ).reshape(*constSin.shape[:5], 2*maxN)
         # print(const0,[i.shape for i in [constN, coefs]])
         memAvai,_ = torch.cuda.mem_get_info()
 
@@ -263,11 +276,11 @@ class FourierFuncTRF(torch.nn.Module):
 
         #(nOutChan, nInChan, 1, 1, nBasis)
         coefs = coefs[:, :, None, None, :]
-        nBasis = nBasis + 1
+        nBasis = nBasis
         nMemReq = nBatch * nSeq * nInChan * nOutChan * nBasis * nWin * 4 # 4 indicates 4 bytes
         # print(torch.cuda.memory_allocated()/1024/1024)
         if nMemReq > memAvai * 0.9 or self.saveMem:
-            out = const0 * coefs[...,0]
+            out = const0 * coefs[...,0] #(nOutChan, nInChan, 1, 1)
             for nB in range(2 * maxN):
                 out = out + constN[...,nB] * coefs[...,1+nB]
         else:
@@ -443,7 +456,6 @@ class FuncTRFsGen(torch.nn.Module):
         #(1, 1, 1, nWin, 1) 
         nSeq = self.lagIdxs_ts[None, None, None, :, None] + self.limitOfShift_idx 
         
-        
         #(nBatch, outDim, inDim, nWin, nSeq)
         nonLinTRFs = aSeq * self.funcTRF( cSeq * ( nSeq -  bSeq) ) 
         # print(torch.cuda.memory_allocated()/1024/1024)
@@ -575,7 +587,7 @@ class ASTRF(torch.nn.Module):
         trfStartIdxs = []
         for ix, xi in enumerate(x):
             nLenXi = xi.shape[-1]
-            if timeinfo is not None:
+            if timeinfo[ix] is not None:
                 assert timeinfo[ix].shape[-1] == xi.shape[-1]
                 nLen = torch.ceil(timeinfo[ix][0][-1] * self.fs).long() + self.nWin
                 startIdx = torch.round(timeinfo[ix][0,:] * self.fs).long() + self.lagIdxs[0]

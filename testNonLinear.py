@@ -59,6 +59,8 @@ def testCanRun():
 
 def testLTIWeight():
     stimulus, response, fs = load_sample_data(n_segments=9)
+    stimulus = stimulus[:3]
+    response = response[:3]
     trf = TRF(direction=1)
     trf.train(stimulus, response, fs, 0, 0.7, 100)
     model = ASTRF(16, 128, 0, 700, fs, device = device)
@@ -68,8 +70,10 @@ def testLTIWeight():
     x = torch.stack([torch.tensor(i.T) for i in stimulus], dim = 0).to(device).float()
     nBatch = x.shape[0]
     nSeq = x.shape[2]
+    model = model.eval()
     timeinfo = [None for i in range(nBatch)]
-    predNNTRF = model(x, timeinfo).cpu().detach().permute(0,2,1).numpy()
+    with torch.no_grad():
+        predNNTRF = model(x, timeinfo).cpu().detach().permute(0,2,1).numpy()
 
     # print(predNNTRF, predMTRF)
     # print(predNNTRF.shape, predMTRF.shape)
@@ -119,4 +123,5 @@ def testFuncTRF():
     assert np.allclose(predNNTRF, predNNTRF2, atol = 1e-6)
 
 # testCanRun()
-testLTIWeight()
+# testLTIWeight()
+testFuncTRF()
