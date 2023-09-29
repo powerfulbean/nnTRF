@@ -124,6 +124,6 @@ def testFuncTRF():
     # print(predNNTRF, predNNTRF2)
     assert np.allclose(predNNTRF, predNNTRF2, atol = 1e-6)
 
-# testCanRun()
-# testLTIWeight()
+testCanRun()
+testLTIWeight()
 testFuncTRF()
