@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from mtrf.model import TRF, load_sample_data
-from nntrf.models import ASTRF, FuncTRFsGen
+from nntrf.models import ASTRF, FuncTRFsGen, WordTRFEmbedGen, WordTRFEmbedGenTokenizer
 device = torch.device('cuda')
 
 def testCanRun():
@@ -124,6 +124,43 @@ def testFuncTRF():
     # print(predNNTRF, predNNTRF2)
     assert np.allclose(predNNTRF, predNNTRF2, atol = 1e-6)
 
-testCanRun()
-testLTIWeight()
-testFuncTRF()
+def testTRFEmbed():
+    device = torch.device(1)
+    wordsDict = {'he':1, 'is':2, 'a':3, 'old':4, 'man':5, 'who':6, 'has':7, 'been':8, 'fishing':9}
+
+    timeinfo = [
+        torch.tensor(
+            [
+                [1,3,5,7,20,40,45,60],
+                [1,3,5,7,20,40,45,60]
+            ]
+        ).float().to(device),
+        torch.tensor(
+            [
+                [1,3,5,7,45,60],
+                [1,3,5,7,45,60]
+            ]
+        ).float().to(device)
+    ]
+
+    model = ASTRF(16, 128, 0, 700, 64, device = device)
+    trfsGen = WordTRFEmbedGen(128, 4, 0, 700, 64, wordsDict, device = device)
+    model.setTRFsGen(trfsGen)
+    model.ifEnableUserTRFGen = True
+    model = model.eval()
+    words = [
+        [
+            'he', 'is', 'a', 'old', 'man', 'he', 'is', 'a'
+        ],
+        [
+            'old', 'man', 'who', 'has', 'been', 'fishing'
+        ]
+    ]
+    x = WordTRFEmbedGenTokenizer(wordsDict,  device = device)(words)
+    pred = model(x, timeinfo)
+    print(pred)
+
+# testCanRun()
+# testLTIWeight()
+# testFuncTRF()
+testTRFEmbed()

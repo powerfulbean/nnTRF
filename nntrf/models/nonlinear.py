@@ -119,6 +119,23 @@ class LTITRFGen(torch.nn.Module):
         TRFs = TRFs.sum(2) #(nBatch, outDim, nWin, nSeq)
         return TRFs
 
+
+class WordTRFEmbedGenTokenizer():
+    def __init__(self, wordsDict, device):
+        self.wordsDict = wordsDict
+        self.device = device
+
+    def __call__(self, words):
+        batchTokens = []
+        for ws in words:
+            tokens = []
+            for w in ws:
+                tokens.append(self.wordsDict[w])
+            batchTokens.append(
+                torch.tensor(tokens, dtype = torch.long,device = self.device)
+            )
+        return batchTokens
+
 class WordTRFEmbedGen(torch.nn.Module):
 
     def __init__(
@@ -138,27 +155,39 @@ class WordTRFEmbedGen(torch.nn.Module):
         self.tmax_ms = tmax_ms
         self.fs = fs
         self.lagIdxs = msec2Idxs([tmin_ms,tmax_ms],fs)
-        self.lagIdxs_ts = torch.Tensor(self.lagIdxs).float().to(device)
+        self.lagIdxs_ts = torch.Tensor(
+            self.lagIdxs
+        ).float().to(device)
         self.lagTimes = Idxs2msec(self.lagIdxs,fs)
         nWin = len(self.lagTimes)
         self.nWin = nWin
         self.embedding_dim = nWin * hiddenDim
 
+        self.device = device
         self.wordsDict = wordsDict
         self.embedding = torch.nn.Embedding(
             len(wordsDict),
             self.embedding_dim,
-        )
-        self.proj = torch.nn.Linear(self.hiddenDim, self.outDim)
+            padding_idx = 0
+        ).to(device)
+        self.proj = torch.nn.Linear(self.hiddenDim, self.outDim).to(device)
 
-    def forward(self, words):
-        batchTokens = []
-        for ws in words:
-            tokens = []
-            for w in ws:
-                tokens.append(self.word[w])
-            batchTokens.append()
-        raise NotImplementedError
+    def forward(self, batchTokens):
+        # (nBatch, outDim, nWin, nSeq)
+        batchTokens = seqLast_pad_zero(batchTokens)
+        # (nBatch, nWin * hiddenDim)
+        trfs = self.embedding(batchTokens)
+        print(trfs.shape)
+        trfs = trfs.reshape(*trfs.shape[:2], self.hiddenDim, self.nWin)
+        # (nBatch, nSeq, nWin, hiddenDim)
+        trfs = trfs.permute(0, 1, 3, 2)
+        # (nBatch, nSeq, nWin, outDim)
+        print(torch.cuda.memory_allocated()/1024/1024)
+        trfs = self.proj(trfs)
+        # (nBatch, outDim, nWin, nSeq)
+        trfs = trfs.permute(0, 2, 3, 1)
+        print(trfs.shape)
+        raise trfs
 
 
 class FourierFuncTRF(torch.nn.Module):
