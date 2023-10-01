@@ -155,9 +155,6 @@ class WordTRFEmbedGen(torch.nn.Module):
         self.tmax_ms = tmax_ms
         self.fs = fs
         self.lagIdxs = msec2Idxs([tmin_ms,tmax_ms],fs)
-        self.lagIdxs_ts = torch.Tensor(
-            self.lagIdxs
-        ).float().to(device)
         self.lagTimes = Idxs2msec(self.lagIdxs,fs)
         nWin = len(self.lagTimes)
         self.nWin = nWin
@@ -166,28 +163,29 @@ class WordTRFEmbedGen(torch.nn.Module):
         self.device = device
         self.wordsDict = wordsDict
         self.embedding = torch.nn.Embedding(
-            len(wordsDict),
+            len(wordsDict)+1,
             self.embedding_dim,
             padding_idx = 0
         ).to(device)
-        self.proj = torch.nn.Linear(self.hiddenDim, self.outDim).to(device)
+        self.proj = torch.nn.Linear(self.hiddenDim, self.outDim, device = device)
 
     def forward(self, batchTokens):
         # (nBatch, outDim, nWin, nSeq)
         batchTokens = seqLast_pad_zero(batchTokens)
         # (nBatch, nWin * hiddenDim)
         trfs = self.embedding(batchTokens)
-        print(trfs.shape)
+        # print(trfs.shape)
         trfs = trfs.reshape(*trfs.shape[:2], self.hiddenDim, self.nWin)
         # (nBatch, nSeq, nWin, hiddenDim)
+        print(trfs.shape)
         trfs = trfs.permute(0, 1, 3, 2)
         # (nBatch, nSeq, nWin, outDim)
-        print(torch.cuda.memory_allocated()/1024/1024)
+        # print(torch.cuda.memory_allocated()/1024/1024)
         trfs = self.proj(trfs)
         # (nBatch, outDim, nWin, nSeq)
-        trfs = trfs.permute(0, 2, 3, 1)
+        trfs = trfs.permute(0, 3, 2, 1)
         print(trfs.shape)
-        raise trfs
+        return trfs 
 
 
 class FourierFuncTRF(torch.nn.Module):

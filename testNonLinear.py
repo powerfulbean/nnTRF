@@ -125,7 +125,6 @@ def testFuncTRF():
     assert np.allclose(predNNTRF, predNNTRF2, atol = 1e-6)
 
 def testTRFEmbed():
-    device = torch.device(1)
     wordsDict = {'he':1, 'is':2, 'a':3, 'old':4, 'man':5, 'who':6, 'has':7, 'been':8, 'fishing':9}
 
     timeinfo = [
