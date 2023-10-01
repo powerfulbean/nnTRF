@@ -178,14 +178,14 @@ class WordTRFEmbedGen(torch.nn.Module):
         # print(trfs.shape)
         trfs = trfs.reshape(*trfs.shape[:2], self.hiddenDim, self.nWin)
         # (nBatch, nSeq, nWin, hiddenDim)
-        print(trfs.shape)
+        # print(trfs.shape)
         trfs = trfs.permute(0, 1, 3, 2)
         # (nBatch, nSeq, nWin, outDim)
         # print(torch.cuda.memory_allocated()/1024/1024)
         trfs = self.proj(trfs)
         # (nBatch, outDim, nWin, nSeq)
         trfs = trfs.permute(0, 3, 2, 1)
-        print(trfs.shape)
+        # print(trfs.shape)
         return trfs 
 
 
