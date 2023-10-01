@@ -22,8 +22,8 @@ def testCanRun():
         ).float().to(device),
         torch.tensor(
             [
-                [1,3,5,7,45,60,75,90],
-                [1,3,5,7,45,60,75,90]
+                [1,3,5,7,45,60,65,70],
+                [1,3,5,7,45,60,65,70]
             ]
         ).float().to(device)
     ]
@@ -157,9 +157,13 @@ def testTRFEmbed():
     ]
     x = WordTRFEmbedGenTokenizer(wordsDict,  device = device)(words)
     pred = model(x, timeinfo)
-    print(pred)
+    print(pred.shape)
+    model.ifEnableUserTRFGen = False
+    x = [x_[None, :] for x_ in x]
+    pred = model(x, timeinfo)
+    print(pred.shape)
 
-# testCanRun()
-# testLTIWeight()
-# testFuncTRF()
+testCanRun()
+testLTIWeight()
+testFuncTRF()
 testTRFEmbed()

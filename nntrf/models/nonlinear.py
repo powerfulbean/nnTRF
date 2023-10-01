@@ -111,6 +111,7 @@ class LTITRFGen(torch.nn.Module):
 
     def forward(self,x):
         # x: (nBatch, inDim,nSeq)
+        assert x.ndim == 3
         kernelsTemp =  self.weight[None, ..., None] #(1, outDim, inDim, nWin, 1) 
         xTemp = x[:, None, :, None, :] #(nBatch, 1, inDim, 1, nSeq)
         TRFs = xTemp * kernelsTemp  #(nBatch, outDim, inDim, nWin, nSeq)
