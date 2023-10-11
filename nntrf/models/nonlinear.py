@@ -122,9 +122,10 @@ class LTITRFGen(torch.nn.Module):
 
 
 class WordTRFEmbedGenTokenizer():
-    def __init__(self, wordsDict, device):
+    def __init__(self, wordsDict, device, ifWordGrp = False):
         self.wordsDict = wordsDict
         self.device = device
+        self.ifWordGrp = ifWordGrp
 
     def __call__(self, words):
         batchTokens = []
