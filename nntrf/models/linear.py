@@ -152,7 +152,6 @@ class CNNTRF(torch.nn.Module):
         self.fs = fs
         self.lagIdxs = msec2Idxs([tmin_ms,tmax_ms],fs)
         self.lagTimes = Idxs2msec(self.lagIdxs,fs)
-        self.oPad = torch.nn.ConstantPad2d((0,0,),0)
         self.tmin_idx = self.lagIdxs[0]
         self.tmax_idx = self.lagIdxs[-1]
         nLags = len(self.lagTimes)
