@@ -641,36 +641,96 @@ class ASTRF(torch.nn.Module):
             targetTensor = targetTensor + ltiTRFBias.view(-1,1)
 
         return targetTensor
-
-    def oneOfBatch(self, x, timeinfo):
-        if timeinfo is not None:
-            assert timeinfo.ndim == 2
-            assert timeinfo.shape[0] ==2
-            assert timeinfo.shape[1] == x.shape[1]
-            nLen = torch.ceil(timeinfo[0][-1] * self.fs).long() + self.nWin
-            vIdxStart = torch.round(timeinfo[0,:] * self.fs).long()
-        else:
-            nLen = x.shape[1]
-            vIdxStart = torch.tensor(np.arange(nLen))
-        vIdxEnd = None #torch.round(tIntvl[1,:] * self.fs).long()
-        # ltiTRF = self.ltiTRFsGen.weight #(inDim, nWin,outDim)
-        ltiTRFBias = self.ltiTRFsGen.bias
-        
-        TRFs = self.getTRFs(x)
-        sourceIdx = vIdxStart + self.lagIdxs[0]
-        targetTensor = self.trfAligner(TRFs,sourceIdx,nLen)
-
-        if self.ifEnableUserTRFGen:
-            targetTensor = targetTensor + self.bias.view(-1,1)
-        else:
-            targetTensor = targetTensor + ltiTRFBias.view(-1,1)
-
-        return targetTensor
     
     def getTRFs(self, x):
         if self.ifEnableUserTRFGen:
             return self.trfsGen(x)
         else:
             return self.ltiTRFsGen(x)
+
+class ASCNNTRF(ASTRF):
+    #perform CNNTRF within intervals,
+    #and change the weights
+
+    def __init__(
+        self,
+        inDim,
+        outDim,
+        tmin_ms,
+        tmax_ms,
+        fs,
+        trfsGen = None,
+        device = 'cpu'
+    ):
+        torch.nn.Module.__init__()
+        assert tmin_ms >= 0
+        self.inDim = inDim
+        self.outDim = outDim
+        self.tmin_ms = tmin_ms
+        self.tmax_ms = tmax_ms
+        self.lagIdxs = msec2Idxs([tmin_ms,tmax_ms],fs)
+        self.lagTimes = Idxs2msec(self.lagIdxs,fs)
+        nWin = len(self.lagTimes)
+        self._nWin = nWin
+        self.ltiTRFsGen = LTITRFGen(
+            inDim,
+            nWin,
+            outDim,
+            ifAddBiasInForward=False
+        ).to(device)
+        self.trfsGen = trfsGen if trfsGen is None else trfsGen.to(device)
+        self.fs = fs
+
+        self.bias = None
+        #also train bias for the trfsGen provided by the user
+        if self.trfsGen is not None:
+            self.bias = torch.nn.Parameter(torch.ones(outDim, device = device))
+            fan_in = inDim * nWin
+            bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
+            torch.nn.init.uniform_(self.bias, -bound, bound)
+        
+        self._enableUserTRFGen = False 
+        self.device = device
+
+    @property
+    def nWin(self):
+        return self._nWin
+    
+    def getTRFs(self, ctx):
+        # ctx: (nBatch, nTRFs, nChan, nSeq) 
+        # #nTRFs is the number of TRFs needed
+
+        #note the difference between the ASTRF and ASCNNTRF at here
+        #the LTITRF is not multiplied with x
+
+        nTRFs = ctx.shape[1]
+        if self.ifEnableUserTRFGen:
+            #how to decide how much trfs to return????
+            TRFs = self.trfsGen(ctx)
+        else:
+            # TRF (nChanOut, nChanIn, nWin)
+            TRFs = [self.ltiTRFsGen.weight] * nTRFs
+        return TRFs
+
+    def getTRFSwitchOnsets(self, x):
+        #X: nBatch * [nChan, nSeq]
+        return [0, 2000, 3000, 4000, 5000, 6000, 8000, 10000]
+
+    def forward(self, x):
+        #X: nBatch * [nChan, nSeq]
+        #timeinfo: nBatch * [2, nSeq]
+        TRFSwitchOnsets = self.getTRFSwitchOnsets(x)
+        nTRFs = len(TRFSwitchOnsets)
+        nBatch, nChan, nSeq = x.shape
+        ctx = x.view(nBatch, nTRFs, nChan, -1)
+        TRFs = self.getTRFs(ctx)
+        TRFsFlip = [TRF.flip([-1]) for TRF in TRFs]
+        for TRF in TRFs:
+            output = self.trfCNN(x, TRFsFlip)
+
+    def trfCNN(self, TRFsFlip):
+        # TRFsFlip is the TRFs with its kernel dimension flipped 
+        # for Conv1D!
+        
 
 
