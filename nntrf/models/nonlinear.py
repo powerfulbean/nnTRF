@@ -670,6 +670,8 @@ class ASCNNTRF(ASTRF):
         self.tmax_ms = tmax_ms
         self.lagIdxs = msec2Idxs([tmin_ms,tmax_ms],fs)
         self.lagTimes = Idxs2msec(self.lagIdxs,fs)
+        self.tmin_idx = self.lagIdxs[0]
+        self.tmax_idx = self.lagIdxs[-1]
         nWin = len(self.lagTimes)
         self._nWin = nWin
         self.ltiTRFsGen = LTITRFGen(
@@ -725,12 +727,51 @@ class ASCNNTRF(ASTRF):
         ctx = x.view(nBatch, nTRFs, nChan, -1)
         TRFs = self.getTRFs(ctx)
         TRFsFlip = [TRF.flip([-1]) for TRF in TRFs]
-        for TRF in TRFs:
-            output = self.trfCNN(x, TRFsFlip)
+        TRFSwitchOnsets.append(-1)
 
-    def trfCNN(self, TRFsFlip):
+        nPaddedOutput = nSeq \
+            + max(-self.tmin_idx, 0) \
+            + max( self.tmax_idx, 0)
+
+        output = torch.zeros(
+            nBatch, 
+            self.outDim, 
+            nPaddedOutput, 
+            device = self.device
+        )
+
+        #segment startIdx offset
+        startOffset = self.tmin_idx
+        #global startIdx offset
+        offset = np.min(0, self.tmin_idx)
+
+        realOffset = startOffset - offset
+
+        for idx, TRFFlip in enumerate(TRFsFlip):
+            t_start = TRFSwitchOnsets[idx]
+            t_end = TRFSwitchOnsets[idx+1]
+            t_x = x[..., t_start : t_end]
+            segment = self.trfCNN(t_x,TRFFlip)
+            t_startReal = t_start + realOffset
+            t_endReal = t_end + realOffset
+            output[:,:,t_startReal : t_endReal] += segment 
+
+       #decide how to crop the output based on tmin and tmax
+        startIdx = max(-self.tmin_idx, 0)
+        endIdx   = -max( self.tmax_idx, 0)
+        return output[startIdx, endIdx]
+
+    def trfCNN(self, x, TRFFlip):
+        #X: (nBatch, nChan, nSubSeq)
         # TRFsFlip is the TRFs with its kernel dimension flipped 
         # for Conv1D!
         
-
+        #need to first padding
+        #timelag doesn't influence how much to pad
+        #  but the offset of the startIdx
+        nWin = TRFFlip.shape[-1]
+        x = torch.nn.functional.pad(x, (nWin, nWin))
+        #then do the conv
+        output = torch.nn.functional.conv1d(x, TRFFlip)
+        return output
 
