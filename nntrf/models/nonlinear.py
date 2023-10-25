@@ -663,7 +663,7 @@ class ASCNNTRF(ASTRF):
         trfsGen = None,
         device = 'cpu'
     ):
-        torch.nn.Module.__init__()
+        torch.nn.Module.__init__(self)
         assert tmin_ms >= 0
         self.inDim = inDim
         self.outDim = outDim
@@ -706,7 +706,7 @@ class ASCNNTRF(ASTRF):
         #note the difference between the ASTRF and ASCNNTRF at here
         #the LTITRF is not multiplied with x
 
-        nTRFs = ctx.shape[1]
+        nTRFs = len(ctx)
         if self.ifEnableUserTRFGen:
             #how to decide how much trfs to return????
             TRFs = self.trfsGen(ctx)
@@ -717,7 +717,15 @@ class ASCNNTRF(ASTRF):
 
     def getTRFSwitchOnsets(self, x):
         #X: nBatch * [nChan, nSeq]
-        return [0, 2000, 3000, 4000, 5000, 6000, 8000, 10000]
+        return [0, 200, 300, 400, 500, 600, 800, 1000]
+
+
+    def defaultCtx(self, switchOnsets, x):
+        switchOnsets2 = switchOnsets + [-1]
+        ctx = []
+        for i in range(len(switchOnsets)):
+            ctx.append(x[:, :, switchOnsets2[i]:switchOnsets2[i+1]])
+        return ctx
 
     def forward(self, x):
         #X: nBatch * [nChan, nSeq]
@@ -725,10 +733,12 @@ class ASCNNTRF(ASTRF):
         TRFSwitchOnsets = self.getTRFSwitchOnsets(x)
         nTRFs = len(TRFSwitchOnsets)
         nBatch, nChan, nSeq = x.shape
-        ctx = x.view(nBatch, nTRFs, nChan, -1)
+        ctx = self.defaultCtx(TRFSwitchOnsets, x)
+        
         TRFs = self.getTRFs(ctx)
         TRFsFlip = [TRF.flip([-1]) for TRF in TRFs]
-        TRFSwitchOnsets.append(-1)
+        print([torch.equal(TRFsFlip[0], temp) for temp in TRFsFlip[1:]])
+        TRFSwitchOnsets.append(None)
 
         nPaddedOutput = nSeq \
             + max(-self.tmin_idx, 0) \
@@ -753,14 +763,16 @@ class ASCNNTRF(ASTRF):
             t_end = TRFSwitchOnsets[idx+1]
             t_x = x[..., t_start : t_end]
             segment = self.trfCNN(t_x,TRFFlip)
+            # print(realOffset)
             t_startReal = t_start + realOffset
-            t_endReal = t_end + realOffset
+            t_endReal = t_startReal + segment.shape[-1]
+            # print(segment.shape, t_startReal, t_endReal, t_x.shape, x.shape)
             output[:,:,t_startReal : t_endReal] += segment 
 
        #decide how to crop the output based on tmin and tmax
         startIdx = max(-self.tmin_idx, 0)
-        endIdx   = -max( self.tmax_idx, 0)
-        return output[startIdx, endIdx]
+        endIdx   = - max( self.tmax_idx, 0)
+        return output[..., startIdx: endIdx] + self.ltiTRFsGen.bias.view(-1, 1)
 
     def trfCNN(self, x, TRFFlip):
         #X: (nBatch, nChan, nSubSeq)
@@ -771,7 +783,7 @@ class ASCNNTRF(ASTRF):
         #timelag doesn't influence how much to pad
         #  but the offset of the startIdx
         nWin = TRFFlip.shape[-1]
-        x = torch.nn.functional.pad(x, (nWin, nWin))
+        x = torch.nn.functional.pad(x, (nWin-1, nWin-1))
         #then do the conv
         output = torch.nn.functional.conv1d(x, TRFFlip)
         return output

@@ -2,9 +2,10 @@ import numpy as np
 import torch
 from mtrf.model import TRF, load_sample_data
 from nntrf.models import ASTRF, FuncTRFsGen, WordTRFEmbedGen, WordTRFEmbedGenTokenizer
+from nntrf.models import ASCNNTRF, CNNTRF
 device = torch.device('cuda')
 
-def testCanRun():
+def testASTRF():
     trf = TRF()
     model = ASTRF(1, 128, 0, 700, 64, device = device)
     w,b = model.exportLTIWeights()
@@ -28,6 +29,7 @@ def testCanRun():
         ).float().to(device)
     ]
 
+    #test the ASTRF and mTRF generate similar results
     trfInput = []
     for idx, t in enumerate(timeinfo):
         t1 = t.cpu().numpy()
@@ -45,39 +47,84 @@ def testCanRun():
         print(np.allclose(out, output11[idx].T[:t_nLen], atol = 1e-11))
         assert np.allclose(out, output11[idx].T[:t_nLen])
 
+    #test ifEnableUserTRFGen works
     trfsGen = FuncTRFsGen(1, 128, 0, 700, 64, device = device)
     model.setTRFsGen(trfsGen)
     model.ifEnableUserTRFGen = True
     output2 = model(x, timeinfo)
     print(output2.shape)
     assert not torch.equal(output1, output2)
-
+    
     model.ifEnableUserTRFGen = False
     output3 = model(x, timeinfo)
     print(output3.shape)
     assert torch.equal(output1, output3)
 
-def testLTIWeight():
+def testASTRFLTI():
     stimulus, response, fs = load_sample_data(n_segments=9)
     stimulus = stimulus[:3]
     response = response[:3]
     trf = TRF(direction=1)
     trf.train(stimulus, response, fs, 0, 0.7, 100)
-    model = ASTRF(16, 128, 0, 700, fs, device = device)
-    model.loadLTIWeights(trf.weights, trf.bias)
     predMTRF = trf.predict(stimulus)
     predMTRF = np.stack(predMTRF, axis = 0)
-    x = torch.stack([torch.tensor(i.T) for i in stimulus], dim = 0).to(device).float()
+    x = torch.stack(
+        [
+            torch.tensor(i.T) for i in stimulus
+        ], 
+        dim = 0
+    ).to(device).float()
     nBatch = x.shape[0]
     nSeq = x.shape[2]
+
+    model = ASTRF(16, 128, 0, 700, fs, device = device)
+    model.loadLTIWeights(trf.weights, trf.bias)
     model = model.eval()
     timeinfo = [None for i in range(nBatch)]
     with torch.no_grad():
         predNNTRF = model(x, timeinfo).cpu().detach().permute(0,2,1).numpy()
-
     # print(predNNTRF, predMTRF)
     # print(predNNTRF.shape, predMTRF.shape)
     assert np.allclose(predNNTRF, predMTRF, atol = 1e-6)
+
+def testASCNNTRFLTI():
+    stimulus, response, fs = load_sample_data(n_segments=1)
+    trf = TRF(direction=1)
+    trf.train(stimulus, response, fs, 0, 0.7, 100)
+    predMTRF = trf.predict(stimulus)
+    predMTRF = np.stack(predMTRF, axis = 0)
+    
+    x = torch.stack(
+        [
+            torch.tensor(i.T) for i in stimulus
+        ], 
+        dim = 0
+    ).to(device).float()
+    nBatch = x.shape[0]
+    nSeq = x.shape[2]
+
+    base = CNNTRF(16, 128, 0, 700, fs)
+    base.loadFromMTRFpy(trf.weights, trf.bias, device = device)
+    base = base.eval()
+    with torch.no_grad():
+        predNNTRF2 = base(x).cpu().detach().permute(0,2,1).numpy()
+    assert np.allclose(predNNTRF2, predMTRF, atol = 1e-5)
+
+    model = ASCNNTRF(16, 128, 0, 700, fs, device = device)
+    model.loadLTIWeights(trf.weights, trf.bias)
+    model = model.eval()
+    with torch.no_grad():
+        predNNTRF = model(x).cpu().detach().permute(0,2,1).numpy()
+    # assert np.allclose(predNNTRF, predNNTRF2, atol = 1e-4)
+    # assert np.array_equal(predNNTRF[:, 0:200, :], predNNTRF2[:, 0:200, :])
+    # print(predNNTRF[:, 200:300, :], predNNTRF2[:, 200:300, :])
+    # assert np.allclose(predNNTRF[:, 200:300, :], predNNTRF2[:, 200:300, :], atol = 1e-5)
+    # assert np.array_equal(predNNTRF[:, -100:-1, :], predNNTRF2[:, -100:-1, :])
+    # print(predNNTRF[:, -4:, :], predNNTRF2[:, -4:, :])
+    print(predNNTRF, predMTRF)
+    print(predNNTRF.shape, predMTRF.shape)
+    # assert np.allclose(predNNTRF[:,:-1,:], predMTRF[:, :-1, :], atol = 1e-6)
+    assert np.allclose(predNNTRF, predMTRF, atol = 1e-5)
 
 
 def testFuncTRF():
@@ -163,7 +210,8 @@ def testTRFEmbed():
     pred = model(x, timeinfo)
     print(pred.shape)
 
-testCanRun()
-testLTIWeight()
-testFuncTRF()
-testTRFEmbed()
+testASCNNTRFLTI()
+# testASTRF()
+# testASTRFLTI()
+# testFuncTRF()
+# testTRFEmbed()
