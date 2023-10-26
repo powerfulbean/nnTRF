@@ -664,7 +664,7 @@ class ASCNNTRF(ASTRF):
         device = 'cpu'
     ):
         torch.nn.Module.__init__(self)
-        assert tmin_ms >= 0
+        # assert tmin_ms >= 0
         self.inDim = inDim
         self.outDim = outDim
         self.tmin_ms = tmin_ms
@@ -754,7 +754,7 @@ class ASCNNTRF(ASTRF):
         #segment startIdx offset
         startOffset = self.tmin_idx
         #global startIdx offset
-        offset = np.min(0, self.tmin_idx)
+        offset = min(0, self.tmin_idx)
 
         realOffset = startOffset - offset
 
@@ -771,7 +771,9 @@ class ASCNNTRF(ASTRF):
 
        #decide how to crop the output based on tmin and tmax
         startIdx = max(-self.tmin_idx, 0)
-        endIdx   = - max( self.tmax_idx, 0)
+        lenOutput = output.shape[-1]
+        endIdx   = lenOutput - max( self.tmax_idx, 0)
+        
         return output[..., startIdx: endIdx] + self.ltiTRFsGen.bias.view(-1, 1)
 
     def trfCNN(self, x, TRFFlip):

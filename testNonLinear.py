@@ -87,10 +87,11 @@ def testASTRFLTI():
     # print(predNNTRF.shape, predMTRF.shape)
     assert np.allclose(predNNTRF, predMTRF, atol = 1e-6)
 
-def testASCNNTRFLTI():
+def testASCNNTRFLTI(tmin, tmax):
+    print('testASCNNTRFLTI', tmin, tmax)
     stimulus, response, fs = load_sample_data(n_segments=1)
     trf = TRF(direction=1)
-    trf.train(stimulus, response, fs, 0, 0.7, 100)
+    trf.train(stimulus, response, fs, tmin / 1e3, tmax / 1e3, 100)
     predMTRF = trf.predict(stimulus)
     predMTRF = np.stack(predMTRF, axis = 0)
     
@@ -103,14 +104,14 @@ def testASCNNTRFLTI():
     nBatch = x.shape[0]
     nSeq = x.shape[2]
 
-    base = CNNTRF(16, 128, 0, 700, fs)
+    base = CNNTRF(16, 128, tmin, tmax, fs)
     base.loadFromMTRFpy(trf.weights, trf.bias, device = device)
     base = base.eval()
     with torch.no_grad():
         predNNTRF2 = base(x).cpu().detach().permute(0,2,1).numpy()
     assert np.allclose(predNNTRF2, predMTRF, atol = 1e-5)
 
-    model = ASCNNTRF(16, 128, 0, 700, fs, device = device)
+    model = ASCNNTRF(16, 128, tmin, tmax, fs, device = device)
     model.loadLTIWeights(trf.weights, trf.bias)
     model = model.eval()
     with torch.no_grad():
@@ -121,9 +122,10 @@ def testASCNNTRFLTI():
     # assert np.allclose(predNNTRF[:, 200:300, :], predNNTRF2[:, 200:300, :], atol = 1e-5)
     # assert np.array_equal(predNNTRF[:, -100:-1, :], predNNTRF2[:, -100:-1, :])
     # print(predNNTRF[:, -4:, :], predNNTRF2[:, -4:, :])
-    print(predNNTRF, predMTRF)
-    print(predNNTRF.shape, predMTRF.shape)
+    # print(predNNTRF, predMTRF)
+    # print(predNNTRF.shape, predMTRF.shape)
     # assert np.allclose(predNNTRF[:,:-1,:], predMTRF[:, :-1, :], atol = 1e-6)
+    assert np.allclose(predNNTRF2, predNNTRF, atol = 1e-5)
     assert np.allclose(predNNTRF, predMTRF, atol = 1e-5)
 
 
@@ -210,7 +212,10 @@ def testTRFEmbed():
     pred = model(x, timeinfo)
     print(pred.shape)
 
-testASCNNTRFLTI()
+testASCNNTRFLTI(0, 700)
+testASCNNTRFLTI(-100, 300)
+testASCNNTRFLTI(-100, 0)
+testASCNNTRFLTI(0, 300)
 # testASTRF()
 # testASTRFLTI()
 # testFuncTRF()
