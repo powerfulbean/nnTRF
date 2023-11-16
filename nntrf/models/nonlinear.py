@@ -122,10 +122,9 @@ class LTITRFGen(torch.nn.Module):
 
 
 class WordTRFEmbedGenTokenizer():
-    def __init__(self, wordsDict, device, ifWordGrp = False):
+    def __init__(self, wordsDict, device):
         self.wordsDict = wordsDict
         self.device = device
-        self.ifWordGrp = ifWordGrp
 
     def __call__(self, words):
         batchTokens = []
@@ -700,18 +699,23 @@ class ASCNNTRF(ASTRF):
         return self._nWin
     
     def getTRFs(self, ctx):
-        # ctx: (nBatch, nTRFs, nChan, nSeq) 
+        # ctx: (nBatch, inDim,nSeq)
         # #nTRFs is the number of TRFs needed
 
         #note the difference between the ASTRF and ASCNNTRF at here
         #the LTITRF is not multiplied with x
 
-        nTRFs = len(ctx)
+        
         if self.ifEnableUserTRFGen:
             #how to decide how much trfs to return????
             TRFs = self.trfsGen(ctx)
+            #TRFs (nBatch, outDim, nWin, nSeq)
+            TRFs = TRFs[0]  #(outDim, nWin, nSeq)
+            TRFs = TRFs.permute(2, 0, 1)[..., None, :]
         else:
-            # TRF (nChanOut, nChanIn, nWin)
+            #ctx: (nTRFs, inDim,nSeq)
+            nTRFs = len(ctx)
+            # TRFs nTRFs * (nChanOut, nChanIn, nWin)
             TRFs = [self.ltiTRFsGen.weight] * nTRFs
         return TRFs
 
@@ -727,14 +731,20 @@ class ASCNNTRF(ASTRF):
             ctx.append(x[:, :, switchOnsets2[i]:switchOnsets2[i+1]])
         return ctx
 
-    def forward(self, x):
+    def forward(self, x, timeInfo = None, ctx = None):
+        
+        #currently only support single batch
+
         #X: nBatch * [nChan, nSeq]
         #timeinfo: nBatch * [2, nSeq]
-        TRFSwitchOnsets = self.getTRFSwitchOnsets(x)
+        if timeInfo is None:
+            TRFSwitchOnsets = self.getTRFSwitchOnsets(x)
+        else:
+            TRFSwitchOnsets = timeInfo
+        if ctx is None:
+            ctx = self.defaultCtx(TRFSwitchOnsets, x)
         nTRFs = len(TRFSwitchOnsets)
         nBatch, nChan, nSeq = x.shape
-        ctx = self.defaultCtx(TRFSwitchOnsets, x)
-        
         TRFs = self.getTRFs(ctx)
         TRFsFlip = [TRF.flip([-1]) for TRF in TRFs]
         print([torch.equal(TRFsFlip[0], temp) for temp in TRFsFlip[1:]])
