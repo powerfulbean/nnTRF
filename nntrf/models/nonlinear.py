@@ -23,13 +23,13 @@ def seqLast_pad_zero(seq, value = 0):
 
 class CausalConv(torch.nn.Module):
 
-    def __init__(self,nInChan,nOutChan,nKernel,dilation = 1):
+    def __init__(self,inDim,outDim,nKernel,dilation = 1):
         super().__init__()
         self.nKernel = nKernel
         self.dilation = dilation
         self.conv = torch.nn.Conv1d(
-            nInChan, 
-            nOutChan, 
+            inDim, 
+            outDim, 
             nKernel, 
             dilation = dilation
         )
@@ -362,7 +362,7 @@ class FuncTRFsGen(torch.nn.Module):
         limitOfShift_idx = 7,
         nBasis = 21, 
         mode = '',
-        featExtracter = None,
+        featExtractor = None,
         auxInDim = 0,
         device = 'cpu'
     ):
@@ -382,7 +382,7 @@ class FuncTRFsGen(torch.nn.Module):
         self.limitOfShift_idx = limitOfShift_idx
         self.nBasis = nBasis
         self.mode = mode
-        self.featExtracter = featExtracter
+        self.featExtractor = featExtractor
         self.nMiddleParam = len(mode.split(','))
         self.device = device
         self.funcTRF = FourierFuncTRF(
@@ -393,9 +393,9 @@ class FuncTRFsGen(torch.nn.Module):
             device=device
         )
 
-        if featExtracter is None:
+        if featExtractor is None:
             inDim, outDim, device = self.expectedInOutDimOfFeatExtracter()
-            self.featExtracter = CausalConv(inDim, outDim, 2).to(device)
+            self.featExtractor = CausalConv(inDim, outDim, 2).to(device)
 
         self.limitOfShift_idx = torch.tensor(limitOfShift_idx)
 
@@ -432,7 +432,7 @@ class FuncTRFsGen(torch.nn.Module):
         output: TRFs (nBatch, outDim, nWin, nSeq)
         '''
         #(nBatch, nMiddleParam, nSeq)
-        paramSeqs = self.featExtracter(x)
+        paramSeqs = self.featExtractor(x)
         nBatch, nMiddleParam, nSeq= paramSeqs.shape
 
         #(nBatch, nMiddleParam, 1, 1, nSeq)
@@ -713,8 +713,8 @@ class ASCNNTRF(ASTRF):
             TRFs = TRFs[0]  #(outDim, nWin, nSeq)
             TRFs = TRFs.permute(2, 0, 1)[..., None, :]
         else:
-            #ctx: (nTRFs, inDim,nSeq)
-            nTRFs = len(ctx)
+            #ctx: (nBatch, inDim,nSeq) (nTRFs, inDim,nSeq)
+            nTRFs = ctx.shape[-1]#len(ctx)
             # TRFs nTRFs * (nChanOut, nChanIn, nWin)
             TRFs = [self.ltiTRFsGen.weight] * nTRFs
         return TRFs
@@ -747,7 +747,8 @@ class ASCNNTRF(ASTRF):
         nBatch, nChan, nSeq = x.shape
         TRFs = self.getTRFs(ctx)
         TRFsFlip = [TRF.flip([-1]) for TRF in TRFs]
-        print([torch.equal(TRFsFlip[0], temp) for temp in TRFsFlip[1:]])
+        # print([torch.equal(TRFsFlip[0], temp) for temp in TRFsFlip[1:]])
+        # print(TRFsFlip)
         TRFSwitchOnsets.append(None)
 
         nPaddedOutput = nSeq \
