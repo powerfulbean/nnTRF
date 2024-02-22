@@ -189,7 +189,7 @@ class WordTRFEmbedGen(torch.nn.Module):
         return trfs 
 
 
-class FourierFuncTRF(torch.nn.Module):
+class FourierBasisTRF(torch.nn.Module):
     
     def __init__(self,nInChan,nOutChan,nLag,nBasis,device = 'cpu'):
         #TRFs the TRF for some channels
@@ -362,7 +362,7 @@ class FuncTRFsGen(torch.nn.Module):
         limitOfShift_idx = 7,
         nBasis = 21, 
         mode = '',
-        featExtractor = None,
+        transformer = None,
         auxInDim = 0,
         device = 'cpu'
     ):
@@ -382,10 +382,10 @@ class FuncTRFsGen(torch.nn.Module):
         self.limitOfShift_idx = limitOfShift_idx
         self.nBasis = nBasis
         self.mode = mode
-        self.featExtractor = featExtractor
+        self.transformer = transformer
         self.nMiddleParam = len(mode.split(','))
         self.device = device
-        self.funcTRF = FourierFuncTRF(
+        self.basisTRF = FourierBasisTRF(
             inDim, 
             outDim, 
             nWin + 2 * limitOfShift_idx, 
@@ -393,9 +393,9 @@ class FuncTRFsGen(torch.nn.Module):
             device=device
         )
 
-        if featExtractor is None:
+        if transformer is None:
             inDim, outDim, device = self.expectedInOutDimOfFeatExtracter()
-            self.featExtractor = CausalConv(inDim, outDim, 2).to(device)
+            self.transformer = CausalConv(inDim, outDim, 2).to(device)
 
         self.limitOfShift_idx = torch.tensor(limitOfShift_idx)
 
@@ -419,7 +419,7 @@ class FuncTRFsGen(torch.nn.Module):
     def fitFuncTRF(self, w):
         w = w * 1 / self.fs
         with torch.no_grad():
-            self.funcTRF.fitTRFs(w)
+            self.basisTRF.fitTRFs(w)
         return self
     
     def pickParam(self,paramSeqs,idx):
@@ -432,7 +432,7 @@ class FuncTRFsGen(torch.nn.Module):
         output: TRFs (nBatch, outDim, nWin, nSeq)
         '''
         #(nBatch, nMiddleParam, nSeq)
-        paramSeqs = self.featExtractor(x)
+        paramSeqs = self.transformer(x)
         nBatch, nMiddleParam, nSeq= paramSeqs.shape
 
         #(nBatch, nMiddleParam, 1, 1, nSeq)
@@ -484,7 +484,7 @@ class FuncTRFsGen(torch.nn.Module):
         nSeq = self.lagIdxs_ts[None, None, None, :, None] + self.limitOfShift_idx 
         
         #(nBatch, outDim, inDim, nWin, nSeq)
-        nonLinTRFs = aSeq * self.funcTRF( cSeq * ( nSeq -  bSeq) ) 
+        nonLinTRFs = aSeq * self.basisTRF( cSeq * ( nSeq -  bSeq) ) 
         # print(torch.cuda.memory_allocated()/1024/1024)
 
         #(nBatch, outDim, nWin, nSeq)
