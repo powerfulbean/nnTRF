@@ -139,7 +139,7 @@ def testFuncTRF():
     trf = TRF(direction=1)
     trf.train(stimulus, response, fs, extLagMin/1000, extLagMax/1000, 100)
     trfsGen.fitFuncTRF(trf.weights)
-    fig = trfsGen.funcTRF.visResult()
+    fig = trfsGen.basisTRF.visResult()
     fig.savefig('funcTRF.png')
     model.setTRFsGen(trfsGen)
     model.ifEnableUserTRFGen = True
@@ -168,7 +168,7 @@ def testFuncTRF():
     print(np.mean(rs))
     assert np.mean(rs) > 0.99
     with torch.no_grad():
-        model.trfsGen.funcTRF.saveMem = True
+        model.trfsGen.basisTRF.saveMem = True
         predNNTRF2 = model(x, timeinfo).cpu().detach().permute(0,2,1).numpy()
     # print(predNNTRF, predNNTRF2)
     assert np.allclose(predNNTRF, predNNTRF2, atol = 1e-6)
@@ -212,11 +212,11 @@ def testTRFEmbed():
     pred = model(x, timeinfo)
     print(pred.shape)
 
-testASCNNTRFLTI(0, 700)
-testASCNNTRFLTI(-100, 300)
-testASCNNTRFLTI(-100, 0)
-testASCNNTRFLTI(0, 300)
+# testASCNNTRFLTI(0, 700)
+# testASCNNTRFLTI(-100, 300)
+# testASCNNTRFLTI(-100, 0)
+# testASCNNTRFLTI(0, 300)
 # testASTRF()
 # testASTRFLTI()
-# testFuncTRF()
+testFuncTRF()
 # testTRFEmbed()

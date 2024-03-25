@@ -245,7 +245,11 @@ class FourierBasisTRF(torch.nn.Module):
                 curFTRF = out[j, i,:].cpu().numpy()
                 TRF = TRFs[j, i,:]
                 assert np.around(pearsonr(TRF, temp)[0]) >= 0.99
-                assert np.allclose(curFTRF,temp,atol = 1e-6)
+                try:
+                    assert np.allclose(curFTRF,temp,atol = 1e-6)
+                except:
+                    print(TRF, curFTRF,temp)
+                    raise 
                 # print(i,j,pearsonr(TRF, curFTRF))
                 
     
@@ -426,13 +430,23 @@ class FuncTRFsGen(torch.nn.Module):
         #paramSeqs: (nBatch, nMiddleParam, 1, 1, nSeq)
         return paramSeqs[:, idx:idx+1, ...]
     
-    def forward(self, x):
+    def forward(self, x, startIdx = None):
         '''
         x: (nBatch, inDim, nSeq)
         output: TRFs (nBatch, outDim, nWin, nSeq)
         '''
         #(nBatch, nMiddleParam, nSeq)
         paramSeqs = self.transformer(x)
+        if startIdx is not None:
+            nBatch, nMiddleParam, _ = paramSeqs.shape
+            idxBatch = torch.arange(nBatch)
+            idxMiddleParam = torch.arange(nMiddleParam)
+            idxMiddleParam = idxMiddleParam[:, None]
+            startIdx = startIdx[:, None, :]
+            idxBatch = idxBatch[:, None, None]
+            paramSeqs = paramSeqs[idxBatch, idxMiddleParam, startIdx]
+            # print(paramSeqs.shape)
+
         nBatch, nMiddleParam, nSeq= paramSeqs.shape
 
         #(nBatch, nMiddleParam, 1, 1, nSeq)
@@ -488,7 +502,7 @@ class FuncTRFsGen(torch.nn.Module):
         # print(torch.cuda.memory_allocated()/1024/1024)
 
         #(nBatch, outDim, nWin, nSeq)
-        TRFs = nonLinTRFs.sum(2) #(nSeq,nLag,self.outDim)
+        TRFs = nonLinTRFs.sum(2)
         # print(torch.cuda.memory_allocated()/1024/1024)
         return TRFs
 
@@ -514,10 +528,12 @@ class ASTRF(torch.nn.Module):
         tmax_ms,
         fs,
         trfsGen = None,
-        device = 'cpu'
+        device = 'cpu',
+        mode_time_impulse = False
     ):
         super().__init__()
         assert tmin_ms >= 0
+        self.mode_time_impulse = mode_time_impulse
         self.inDim = inDim
         self.outDim = outDim
         self.tmin_ms = tmin_ms
@@ -615,7 +631,9 @@ class ASTRF(torch.nn.Module):
         for ix, xi in enumerate(x):
             nLenXi = xi.shape[-1]
             if timeinfo[ix] is not None:
-                assert timeinfo[ix].shape[-1] == xi.shape[-1]
+                # print(timeinfo[ix].shape)
+                if not self.mode_time_impulse:
+                    assert timeinfo[ix].shape[-1] == xi.shape[-1]
                 nLen = torch.ceil(timeinfo[ix][0][-1] * self.fs).long() + self.nWin
                 startIdx = torch.round(timeinfo[ix][0,:] * self.fs).long() + self.lagIdxs[0]
             else:
@@ -629,7 +647,10 @@ class ASTRF(torch.nn.Module):
         x = seqLast_pad_zero(x)
         trfStartIdxs = seqLast_pad_zero(trfStartIdxs, value = -1)
         #(nBatch, outDim, nWin, nSeq)
-        TRFs = self.getTRFs(x)
+        if self.mode_time_impulse:
+            TRFs = self.getTRFs(x, trfStartIdxs)
+        else:
+            TRFs = self.getTRFs(x)
 
         ##(nBatch,outDim,nRealLen)
         targetTensor = self.trfAligner(TRFs,trfStartIdxs,nGlobLen)
@@ -642,9 +663,9 @@ class ASTRF(torch.nn.Module):
 
         return targetTensor
     
-    def getTRFs(self, x):
+    def getTRFs(self, x, startIdx = None):
         if self.ifEnableUserTRFGen:
-            return self.trfsGen(x)
+            return self.trfsGen(x, startIdx)
         else:
             return self.ltiTRFsGen(x)
 
