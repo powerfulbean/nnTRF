@@ -430,13 +430,8 @@ class FuncTRFsGen(torch.nn.Module):
         #paramSeqs: (nBatch, nMiddleParam, 1, 1, nSeq)
         return paramSeqs[:, idx:idx+1, ...]
     
-    def forward(self, x, startIdx = None):
-        '''
-        x: (nBatch, inDim, nSeq)
-        output: TRFs (nBatch, outDim, nWin, nSeq)
-        '''
-        #(nBatch, nMiddleParam, nSeq)
-        paramSeqs = self.transformer(x)
+    def getTransformParams(self, x, startIdx = None):
+        paramSeqs = self.transformer(x) #(nBatch, nMiddleParam, nSeq)
         if startIdx is not None:
             nBatch, nMiddleParam, _ = paramSeqs.shape
             idxBatch = torch.arange(nBatch)
@@ -445,7 +440,16 @@ class FuncTRFsGen(torch.nn.Module):
             startIdx = startIdx[:, None, :]
             idxBatch = idxBatch[:, None, None]
             paramSeqs = paramSeqs[idxBatch, idxMiddleParam, startIdx]
-            # print(paramSeqs.shape)
+        return paramSeqs
+
+    def forward(self, x, startIdx = None):
+        '''
+        x: (nBatch, inDim, nSeq)
+        output: TRFs (nBatch, outDim, nWin, nSeq)
+        '''
+        #(nBatch, nMiddleParam, nSeq)
+        paramSeqs = self.getTransformParams(x, startIdx)
+        # print(paramSeqs.shape)
 
         nBatch, nMiddleParam, nSeq= paramSeqs.shape
 
