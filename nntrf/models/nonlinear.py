@@ -430,6 +430,7 @@ class FuncTRFsGen(torch.nn.Module):
         #paramSeqs: (nBatch, nMiddleParam, 1, 1, nSeq)
         return paramSeqs[:, idx:idx+1, ...]
     
+    
     def getTransformParams(self, x, startIdx = None):
         paramSeqs = self.transformer(x) #(nBatch, nMiddleParam, nSeq)
         if startIdx is not None:
@@ -440,19 +441,7 @@ class FuncTRFsGen(torch.nn.Module):
             startIdx = startIdx[:, None, :]
             idxBatch = idxBatch[:, None, None]
             paramSeqs = paramSeqs[idxBatch, idxMiddleParam, startIdx]
-        return paramSeqs
-
-    def forward(self, x, startIdx = None):
-        '''
-        x: (nBatch, inDim, nSeq)
-        output: TRFs (nBatch, outDim, nWin, nSeq)
-        '''
-        #(nBatch, nMiddleParam, nSeq)
-        paramSeqs = self.getTransformParams(x, startIdx)
-        # print(paramSeqs.shape)
-
-        nBatch, nMiddleParam, nSeq= paramSeqs.shape
-
+        
         #(nBatch, nMiddleParam, 1, 1, nSeq)
         paramSeqs = paramSeqs[:, :, None, None, :]
         midParamList = self.mode.split(',')
@@ -498,6 +487,16 @@ class FuncTRFsGen(torch.nn.Module):
             cSeq = 1
 
         assert (len(midParamList) + nParamMiss) == 3
+        return aSeq, bSeq, cSeq
+
+    def forward(self, x, startIdx = None):
+        '''
+        x: (nBatch, inDim, nSeq)
+        output: TRFs (nBatch, outDim, nWin, nSeq)
+        '''
+        #(nBatch, 1, 1, 1, nSeq)
+        aSeq, bSeq, cSeq = self.getTransformParams(x, startIdx)
+        
         #(1, 1, 1, nWin, 1) 
         nSeq = self.lagIdxs_ts[None, None, None, :, None] + self.limitOfShift_idx 
         
@@ -652,7 +651,9 @@ class ASTRF(torch.nn.Module):
         trfStartIdxs = seqLast_pad_zero(trfStartIdxs, value = -1)
         #(nBatch, outDim, nWin, nSeq)
         if self.mode_time_impulse:
-            TRFs = self.getTRFs(x, trfStartIdxs)
+            featIdxs = trfStartIdxs.detach().clone()
+            featIdxs[featIdxs != -1] = featIdxs[featIdxs != -1] - self.lagIdxs[0]
+            TRFs = self.getTRFs(x, featIdxs)
         else:
             TRFs = self.getTRFs(x)
 
