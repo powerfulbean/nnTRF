@@ -348,7 +348,7 @@ class GaussianBasisTRF(torch.nn.Module):
     def TRF(self):
         #(nWin)
         timeEmbed = torch.arange(self.nWin)[None, :, None]
-        return self.forward(timeEmbed)[0,...,0].detach().cpu().numpy()
+        return self.forward(timeEmbed)[0,...,0]#.detach().cpu().numpy()
 
 
 class FourierBasisTRF(torch.nn.Module):
