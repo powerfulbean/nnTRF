@@ -1,10 +1,14 @@
 import math
 import numpy as np
 import torch
-import skfda
 from scipy.stats import pearsonr
 from torch.nn.functional import pad, fold
 from .linear import msec2Idxs, Idxs2msec, CPadOrCrop1D
+try:
+    import skfda
+except:
+    skfda = None
+
 try:
     from matplotlib import pyplot as plt
 except:
