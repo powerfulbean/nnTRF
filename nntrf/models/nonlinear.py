@@ -4,7 +4,7 @@ import torch
 import skfda
 from scipy.stats import pearsonr
 from torch.nn.functional import pad, fold
-from .linear import msec2Idxs, Idxs2msec
+from .linear import msec2Idxs, Idxs2msec, CPadOrCrop1D
 try:
     from matplotlib import pyplot as plt
 except:
@@ -187,6 +187,163 @@ class WordTRFEmbedGen(torch.nn.Module):
         trfs = trfs.permute(0, 3, 2, 1)
         # print(trfs.shape)
         return trfs 
+
+
+class CustomKernelCNNTRF(torch.nn.Module):
+
+    def __init__(self,inDim,outDim,tmin_ms,tmax_ms,fs,groups = 1,dilation = 1):
+        super().__init__()
+        self.tmin_ms = tmin_ms
+        self.tmax_ms = tmax_ms
+        self.fs = fs
+        self.lagIdxs = msec2Idxs([tmin_ms,tmax_ms],fs)
+        self.lagTimes = Idxs2msec(self.lagIdxs,fs)
+        self.tmin_idx = self.lagIdxs[0]
+        self.tmax_idx = self.lagIdxs[-1]
+        nLags = len(self.lagTimes)
+        nKernels = (nLags - 1) / dilation + 1
+        assert np.ceil(nKernels) == np.floor(nKernels)
+        self.nWin = int(nKernels)
+        self.oPadOrCrop = CPadOrCrop1D(self.tmin_idx,self.tmax_idx)
+        self.groups = groups
+        self.dilation = dilation
+        self.inDim = inDim
+        self.outDim = outDim
+
+        k = 1 / (inDim * self.nWin)
+        lower = - np.sqrt(k)
+        upper = np.sqrt(k)
+        self.bias = torch.nn.Parameter(torch.ones(outDim))
+        torch.nn.init.uniform_(self.bias, a = lower, b = upper)
+
+    def setWight(self, weight):
+        self.weight = weight
+
+    def forward(self, x, weight = None):
+        if weight is None:
+            weight = self.weight
+        assert self.nWin == weight.shape[2]
+        assert self.outDim == weight.shape[0]
+        assert self.inDim == weight.shape[1]
+        x = self.oPadOrCrop(x)
+        y = torch.nn.functional.conv1d(
+            x, 
+            weight, 
+            bias=self.bias, 
+            dilation=self.dilation, 
+            groups=self.groups
+        )
+        return y
+
+def buildGaussianResponse(x, mu, sigma):
+    # x: (nBatch, nWin, nSeq)
+    # mu: (nBasis)
+    # sigma: (nBasis, outDim, inDim)
+    # output: (nBatch, nBasis, outDim, inDim, nWin, nSeq)
+
+    # x: (nBatch, 1, 1, 1, nWin, nSeq)
+    x = x[:, None, None, None, :,:]
+    # mu: (nBasis, 1, 1, 1, 1)
+    mu = mu[..., None, None, None, None]
+    # sigma: (nBasis, outDim, inDim,  1, 1)
+    sigma = sigma[..., None, None]
+    # output: (nBatch, nBasis, outDim, inDim, nWin, nSeq)
+    return torch.exp(-(x-mu)**2 / (2*(sigma)**2))
+
+class GaussianBasisTRF(torch.nn.Module):
+    
+    def __init__(
+        self, 
+        inDim, 
+        outDim, 
+        nBasis, 
+        nWin,
+        sigmaMin = 6.4,
+        sigmaMax = 6.4,
+        ifSumInDim = False
+    ):
+        super().__init__()
+
+        ### Fittable Parameters
+        ## out projection init
+        coefs = torch.ones((nBasis, outDim, inDim))
+        torch.nn.init.xavier_uniform_(coefs)
+        self.coefs = torch.nn.Parameter(coefs)
+        ## bias init
+        k = 1 / (inDim * nWin)
+        lower = - np.sqrt(k)
+        upper = np.sqrt(k)
+        self.bias = torch.nn.Parameter(torch.ones(outDim))
+        torch.nn.init.uniform_(self.bias, a = lower, b = upper)
+        ## sigma init
+        sigma = torch.ones(nBasis, outDim, inDim) * sigmaMin
+        self.sigma = torch.nn.Parameter(sigma)
+        # torch.nn.init.uniform_(self.sigma, a = lower, b = upper)
+
+        ### Fixed Values
+        # timeEmbed = torch.arange(nWin) 
+        # self.register_buffer('timeEmbed', timeEmbed)
+        self.nWin = nWin
+        mu = torch.linspace(0, nWin, nBasis + 2)
+        self.register_buffer('mu', mu[1:-1])
+        sigmaMin = torch.tensor(sigmaMin)
+        self.register_buffer('sigmaMin', sigmaMin)
+        sigmaMax = torch.tensor(sigmaMax)
+        self.register_buffer('sigmaMax', sigmaMax)
+        self.ifSumInDim = ifSumInDim
+        
+
+    def forward(self, x):
+        # output (nBatch, outDim, (inDim), nWin, nSeq)
+        # x: (nBatch, nWin, nSeq)
+        # currently just support the 'component' mode
+        
+        sigma = self.sigma
+        sigma = torch.maximum(sigma, self.sigmaMin)
+        sigma = torch.minimum(sigma, self.sigmaMax)
+        # print(sigma)
+        # (nBatch, nBasis, outDim, inDim, nWin, nSeq)
+        gaussResps = buildGaussianResponse(
+            x, 
+            self.mu, 
+            sigma
+        )
+        
+        # coefs: (nBasis, outDim, inDim, 1, 1)
+        coefs = self.coefs[..., None, None]
+
+        # (nBatch, nBasis, outDim, inDim, nWin, nSeq)
+        wGaussResps = coefs * gaussResps
+        if self.ifSumInDim:
+            # (nBatch, outDim, nWin, nSeq)
+            wGaussResps = wGaussResps.sum((-5, -3))
+        else:
+            # (nBatch, outDim, inDim, nWin, nSeq)
+            wGaussResps = wGaussResps.sum((-5))
+        wGaussResps = wGaussResps + self.bias[:, None, None]
+        # print(wGaussResps)
+        return wGaussResps
+    
+    # @property
+    # def nWin(self):
+    #     return self.timeEmbed.shape[0]
+    
+    @property
+    def inDim(self):
+        return self.sigma.shape[0]
+    
+    @property
+    def outDim(self):
+        return self.sigma.shape[2]
+    
+    @property
+    def nBasis(self):
+        return self.sigma.shape[1]
+    
+    def getFittedTRF(self):
+        #(nBatch, nWin, nSeq)
+        timeEmbed = torch.arange(self.nWin)[None, :, None]
+        return self.forward(timeEmbed)[0,...,0].detached().cpu().numpy()
 
 
 class FourierBasisTRF(torch.nn.Module):
