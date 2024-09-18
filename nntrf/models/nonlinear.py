@@ -220,12 +220,12 @@ class CustomKernelCNNTRF(torch.nn.Module):
         self.bias = torch.nn.Parameter(torch.ones(outDim))
         torch.nn.init.uniform_(self.bias, a = lower, b = upper)
 
-    def setWight(self, weight):
-        self.weight = weight
+    def setTRFGen(self, trfGen):
+        self.trfGen = trfGen
 
     def forward(self, x, weight = None):
         if weight is None:
-            weight = self.weight
+            weight = self.trfGen.TRF()
         assert self.nWin == weight.shape[2]
         assert self.outDim == weight.shape[0]
         assert self.inDim == weight.shape[1]
@@ -321,10 +321,11 @@ class GaussianBasisTRF(torch.nn.Module):
         if self.ifSumInDim:
             # (nBatch, outDim, nWin, nSeq)
             wGaussResps = wGaussResps.sum((-5, -3))
+            wGaussResps = wGaussResps + self.bias[:, None, None]
         else:
             # (nBatch, outDim, inDim, nWin, nSeq)
             wGaussResps = wGaussResps.sum((-5))
-        wGaussResps = wGaussResps + self.bias[:, None, None]
+            wGaussResps = wGaussResps + self.bias[:, None, None, None]
         # print(wGaussResps)
         return wGaussResps
     
@@ -344,8 +345,8 @@ class GaussianBasisTRF(torch.nn.Module):
     def nBasis(self):
         return self.sigma.shape[1]
     
-    def getFittedTRF(self):
-        #(nBatch, nWin, nSeq)
+    def TRF(self):
+        #(nWin)
         timeEmbed = torch.arange(self.nWin)[None, :, None]
         return self.forward(timeEmbed)[0,...,0].detached().cpu().numpy()
 
