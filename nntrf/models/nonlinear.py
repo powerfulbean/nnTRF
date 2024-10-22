@@ -323,6 +323,9 @@ class FuncBasisTRF(torch.nn.Module):
     
     def forward(self, x):
         raise NotImplementedError
+    
+    def fitTRFs(self, TRFs):
+        raise NotImplementedError
 
 class GaussianBasisTRF(torch.nn.Module):
     
@@ -420,6 +423,43 @@ class GaussianBasisTRF(torch.nn.Module):
         device = self.coefs.get_device()
         timeEmbed = torch.arange(self.nWin, device = device)[None, :, None]
         return self.forward(timeEmbed)[0,...,0]#.detach().cpu().numpy()
+    
+    def fitTRFs(self, TRFs):
+        raise NotImplementedError
+        trf = siIO.loadObject(r'C:/Users/jdou3/Downloads/savedModel_0.mtrf')
+        trfW = trf.weights
+
+        # plt.plot(trfW[2])
+
+        def buildGaussianResponse(x, mu, sigma):
+            return np.exp(-(x-mu)**2 / (2*(sigma)**2))
+
+        def msec2Idxs(secs, fs):
+            return (np.array(secs) * fs).round()
+
+        trfW2_19 = trfW[2,:,19]
+        muIdxs = msec2Idxs(np.arange(0.1, 0.7, 0.1), 64)[:,None]
+        sigma = np.ones(muIdxs.shape) * 6.4
+
+        nWin = trfW.shape[1]
+        x = np.arange(nWin)
+        gaussresps = buildGaussianResponse(x, muIdxs, sigma)
+
+        plt.plot(gaussresps.T)
+        def solveCoef(gaussresps, trf):
+            A = np.concatenate([gaussresps, np.ones((1,nWin))], axis = 0).T
+            coefs = np.linalg.lstsq(A, trf, rcond=None)[0]
+            return coefs[:-1], coefs[-1]
+
+
+
+        m, c = solveCoef(gaussresps, trfW2_19)
+        m = m * np.array([1,1,1,1,1,1])
+        predTRF = m @ gaussresps + c
+        plt.figure()
+        plt.plot(predTRF)
+        plt.plot(trfW2_19)
+        plt.legend(['fitted', 'real'])
 
 
 class FourierBasisTRF(torch.nn.Module):
@@ -605,8 +645,6 @@ class FuncTRFsGen(torch.nn.Module):
         super().__init__()
         assert mode.replace('+-','') in ['','a','b','a,b','a,b,c']
         self.auxInDim = auxInDim
-        self.tmin_ms = tmin_ms
-        self.tmax_ms = tmax_ms
         self.fs = fs
         self.lagIdxs = msec2Idxs([tmin_ms,tmax_ms],fs)
         self.lagIdxs_ts = torch.Tensor(self.lagIdxs).float().to(device)
@@ -630,6 +668,14 @@ class FuncTRFsGen(torch.nn.Module):
             self.transformer = CausalConv(inDim, outDim, 2).to(device)
 
         self.limitOfShift_idx = torch.tensor(limitOfShift_idx)
+
+    @property
+    def tmin_ms(self):
+        return self.lagTimes[0]
+    
+    @property
+    def tmax_ms(self):
+        return self.lagTimes[-1]
 
     @property
     def inDim(self):
