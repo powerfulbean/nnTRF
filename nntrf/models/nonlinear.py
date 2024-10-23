@@ -284,22 +284,6 @@ class CustomKernelCNNTRF(torch.nn.Module):
         )
         return y
 
-def buildGaussianResponse(x, mu, sigma):
-    # x: (nBatch, nWin, nSeq)
-    # mu: (nBasis)
-    # sigma: (nBasis, outDim, inDim)
-    # output: (nBatch, nBasis, outDim, inDim, nWin, nSeq)
-
-    # x: (nBatch, 1, 1, 1, nWin, nSeq)
-    x = x[:, None, None, None, :,:]
-    # mu: (nBasis, 1, 1, 1, 1)
-    mu = mu[..., None, None, None, None]
-    # sigma: (nBasis, outDim, inDim,  1, 1)
-    sigma = sigma[..., None, None]
-    # output: (nBatch, nBasis, outDim, inDim, nWin, nSeq)
-    return torch.exp(-(x-mu)**2 / (2*(sigma)**2))
-
-
 class FuncBasisTRF(torch.nn.Module):
 
     @property
@@ -327,6 +311,27 @@ class FuncBasisTRF(torch.nn.Module):
     def fitTRFs(self, TRFs):
         raise NotImplementedError
 
+def build_gaussian_response(x, mu, sigma):
+    # x: (nBatch, nWin, nSeq)
+    # mu: (nBasis)
+    # sigma: (nBasis, outDim, inDim)
+    # output: (nBatch, nBasis, outDim, inDim, nWin, nSeq)
+
+    # x: (nBatch, 1, 1, 1, nWin, nSeq)
+    x = x[:, None, None, None, :,:]
+    # mu: (nBasis, 1, 1, 1, 1)
+    mu = mu[..., None, None, None, None]
+    # sigma: (nBasis, outDim, inDim,  1, 1)
+    sigma = sigma[..., None, None]
+    # output: (nBatch, nBasis, outDim, inDim, nWin, nSeq)
+    return torch.exp(-(x-mu)**2 / (2*(sigma)**2))
+
+def solve_coef(gaussresps, trf):
+    nWin = trf.shape[0]
+    A = np.concatenate([gaussresps, np.ones((1,nWin))], axis = 0).T
+    coefs = np.linalg.lstsq(A, trf, rcond=None)[0]
+    return coefs[:-1], coefs[-1]
+
 class GaussianBasisTRF(torch.nn.Module):
     
     def __init__(
@@ -343,7 +348,7 @@ class GaussianBasisTRF(torch.nn.Module):
 
         ### Fittable Parameters
         ## out projection init
-        coefs = torch.ones((nBasis, outDim, inDim))
+        coefs = torch.ones((nBasis + 1, outDim, inDim))
         torch.nn.init.xavier_uniform_(coefs)
         self.coefs = torch.nn.Parameter(coefs)
         ## bias init
@@ -380,17 +385,19 @@ class GaussianBasisTRF(torch.nn.Module):
         sigma = torch.minimum(sigma, self.sigmaMax)
         # print(sigma)
         # (nBatch, nBasis, outDim, inDim, nWin, nSeq)
-        gaussResps = buildGaussianResponse(
+        gaussResps = build_gaussian_response(
             x, 
             self.mu, 
             sigma
         )
         
-        # coefs: (nBasis, outDim, inDim, 1, 1)
+        # coefs: (nBasis + 1, outDim, inDim, 1, 1)
         coefs = self.coefs[..., None, None]
 
-        # (nBatch, nBasis, outDim, inDim, nWin, nSeq)
-        wGaussResps = coefs * gaussResps
+        nBatch, _, outDim, inDim, nWin, nSeq = gaussResps.shape
+        # (nBatch, nBasis+1, outDim, inDim, nWin, nSeq)
+        aug_gaussResps = torch.cat([gaussResps, torch.ones(nBatch, 1, outDim, inDim, nWin, nSeq)], dim = -5)
+        wGaussResps = coefs * aug_gaussResps
         if self.ifSumInDim:
             # (nBatch, outDim, nWin, nSeq)
             wGaussResps = wGaussResps.sum((-5, -3))
@@ -425,41 +432,48 @@ class GaussianBasisTRF(torch.nn.Module):
         return self.forward(timeEmbed)[0,...,0]#.detach().cpu().numpy()
     
     def fitTRFs(self, TRFs):
-        raise NotImplementedError
-        trf = siIO.loadObject(r'C:/Users/jdou3/Downloads/savedModel_0.mtrf')
-        trfW = trf.weights
+        '''
+        TRFs is the numpy array of mtrf weights
+        Shape: [nInDim, nLags, nOutput]
 
-        # plt.plot(trfW[2])
+        self.coefs: (nBasis, outDim, inDim)
+        sigma: (nBasis, outDim, inDim)
+        '''
+        
+        x = torch.arange(self.nWin)
+        sigma = self.sigma
+        # print(sigma)
+        # (nBasis, outDim, inDim, nWin)
+        gaussResps = build_gaussian_response(
+            x, 
+            self.mu, 
+            sigma
+        )[0, ..., 0].cpu().numpy()
 
-        def buildGaussianResponse(x, mu, sigma):
-            return np.exp(-(x-mu)**2 / (2*(sigma)**2))
-
-        def msec2Idxs(secs, fs):
-            return (np.array(secs) * fs).round()
-
-        trfW2_19 = trfW[2,:,19]
-        muIdxs = msec2Idxs(np.arange(0.1, 0.7, 0.1), 64)[:,None]
-        sigma = np.ones(muIdxs.shape) * 6.4
-
-        nWin = trfW.shape[1]
-        x = np.arange(nWin)
-        gaussresps = buildGaussianResponse(x, muIdxs, sigma)
-
-        plt.plot(gaussresps.T)
-        def solveCoef(gaussresps, trf):
-            A = np.concatenate([gaussresps, np.ones((1,nWin))], axis = 0).T
-            coefs = np.linalg.lstsq(A, trf, rcond=None)[0]
-            return coefs[:-1], coefs[-1]
-
-
-
-        m, c = solveCoef(gaussresps, trfW2_19)
-        m = m * np.array([1,1,1,1,1,1])
-        predTRF = m @ gaussresps + c
-        plt.figure()
-        plt.plot(predTRF)
-        plt.plot(trfW2_19)
-        plt.legend(['fitted', 'real'])
+        nWin = TRFs.shape[1]
+        assert nWin == self.nWin
+        # (nBasis, outDim, inDim)
+        coefs = np.zeros(self.coef.shape)
+        for i in range(self.outDim):
+            for j in range(self.inDim):
+                t_trf = TRFs[j,:,i]
+                # (nBasis, nWin)
+                t_gauss = gaussResps[:, i, j, :] 
+                t_coef = solve_coef(
+                    t_gauss,
+                    t_trf
+                )
+                coefs[:, i, j] = t_coef
+        
+        with torch.no_grad():
+            self.coefs[:,:,:] = coefs
+            # (outDim, inDim, nWin)
+            torchTRFs = self.TRF().cpu().numpy()
+            for j in range(self.nOutChan):
+                for i in range(self.nInChan):
+                    curFTRF = torchTRFs[j, i,:]
+                    TRF = TRFs[j, i,:]
+                    assert np.around(pearsonr(curFTRF, TRF)[0]) >= 0.99
 
 
 class FourierBasisTRF(torch.nn.Module):
@@ -482,6 +496,11 @@ class FourierBasisTRF(torch.nn.Module):
         self.saveMem = False
 
     def fitTRFs(self,TRFs):
+        '''
+        TRFs is the numpy array of mtrf weights
+        Shape: [nInDim, nLags, nOutput]
+        '''
+
         TRFs = torch.from_numpy(TRFs)
         TRFs = TRFs.permute(2, 0, 1)
         self.TRFs[:,:,:] = TRFs.to(self.device)[:,:,:]
