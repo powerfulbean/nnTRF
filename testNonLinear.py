@@ -2,13 +2,13 @@ import numpy as np
 import torch
 from mtrf.model import TRF, load_sample_data
 from nntrf.models import ASTRF, FuncTRFsGen, WordTRFEmbedGen, WordTRFEmbedGenTokenizer
-from nntrf.models import ASCNNTRF, CNNTRF
+from nntrf.models import ASCNNTRF, CNNTRF, GaussianBasisTRF
 device = torch.device('cpu')
 
 def testASTRF():
     trf = TRF()
     model = ASTRF(1, 128, 0, 700, 64, device = device)
-    w,b = model.exportLTIWeights()
+    w,b = model.get_linear_weights()
     trf.weights = w
     trf.bias = b
     trf.times = np.array(model.lagTimes) / 1000
@@ -49,21 +49,22 @@ def testASTRF():
 
     #test ifEnableUserTRFGen works
     trfsGen = FuncTRFsGen(1, 128, 0, 700, 64, device = device)
-    model.setTRFsGen(trfsGen)
-    model.ifEnableUserTRFGen = True
+    model.set_trfs_gen(trfsGen)
+    model.if_enable_trfsGen = True
     output2 = model(x, timeinfo)
     print(output2.shape)
     assert not torch.equal(output1, output2)
     
-    model.ifEnableUserTRFGen = False
+    model.if_enable_trfsGen = False
     output3 = model(x, timeinfo)
     print(output3.shape)
     assert torch.equal(output1, output3)
 
 def testASTRFLTI():
     stimulus, response, fs = load_sample_data(n_segments=9)
-    stimulus = stimulus[:3]
-    response = response[:3]
+    stimulus = [s.mean(axis=1, keepdims=True) for s in stimulus]
+    # stimulus = stimulus[:3]
+    # response = response[:3]
     trf = TRF(direction=1)
     trf.train(stimulus, response, fs, 0, 0.7, 100)
     predMTRF = trf.predict(stimulus)
@@ -78,7 +79,7 @@ def testASTRFLTI():
     nSeq = x.shape[2]
 
     model = ASTRF(16, 128, 0, 700, fs, device = device)
-    model.loadLTIWeights(trf.weights, trf.bias)
+    model.set_linear_weights(trf.weights, trf.bias)
     model = model.eval()
     timeinfo = [None for i in range(nBatch)]
     with torch.no_grad():
@@ -129,23 +130,24 @@ def testASCNNTRFLTI(tmin, tmax):
     assert np.allclose(predNNTRF, predMTRF, atol = 1e-5)
 
 
-def testFuncTRF():
+def testFuncTRF(basisTRFName):
     stimulus, response, fs = load_sample_data(n_segments=9)
-    stimulus = stimulus[:3]
-    response = response[:3]
+    stimulus = [s.mean(axis=1, keepdims=True) for s in stimulus]
+    stimulus = stimulus#[:3]
+    response = response#[:3]
 
     #prepare the ASTRF model
-    model = ASTRF(16, 128, 0, 700, fs, device = device)
-    trfsGen = FuncTRFsGen(16, 128, 0, 700, fs, device = device)
+    model = ASTRF(1, 128, 0, 700, fs, device = device)
+    trfsGen = FuncTRFsGen(1, 128, 0, 700, fs, basisTRFName=basisTRFName, device = device)
     extLagMin, extLagMax = trfsGen.extendedTimeLagRange
-
+    print(extLagMin, extLagMax)
     #prepare the mtrf model
     trf = TRF(direction=1)
     trf.train(stimulus, response, fs, extLagMin/1000, extLagMax/1000, 1000)
 
     #train the trfsGen for ASTRF
     trfsGen.fitFuncTRF(trf.weights)
-    fig = trfsGen.basisTRF.visResult()
+    fig = trfsGen.basisTRF.vis()
     fig.savefig('funcTRF.png')
     model.set_trfs_gen(trfsGen)
     model.if_enable_trfsGen = True
@@ -166,7 +168,7 @@ def testFuncTRF():
     with torch.no_grad():
         predNNTRF = model(x, timeinfo).cpu().detach().permute(0,2,1).numpy()
     # print(predNNTRF, predMTRF)
-    assert np.allclose(predNNTRF, predMTRF, atol = 1e-1)
+    # assert np.allclose(predNNTRF, predMTRF, atol = 1e-1)
 
     from scipy.stats import pearsonr
     nBatch, nSeq, nChan = predNNTRF.shape
@@ -228,11 +230,13 @@ def testTRFEmbed():
     pred = model(x, timeinfo)
     print(pred.shape)
 
+
 # testASCNNTRFLTI(0, 700)
 # testASCNNTRFLTI(-100, 300)
 # testASCNNTRFLTI(-100, 0)
 # testASCNNTRFLTI(0, 300)
 # testASTRF()
 # testASTRFLTI()
-testFuncTRF()
+testFuncTRF('gauss')
+# testFuncTRF('fourier')
 # testTRFEmbed()

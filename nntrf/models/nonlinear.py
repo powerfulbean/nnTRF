@@ -305,6 +305,9 @@ class FuncBasisTRF(torch.nn.Module):
     def TRF(self):
         raise NotImplementedError
     
+    def vis(self):
+        raise NotImplementedError
+    
     def forward(self, x):
         raise NotImplementedError
     
@@ -312,13 +315,13 @@ class FuncBasisTRF(torch.nn.Module):
         raise NotImplementedError
 
 def build_gaussian_response(x, mu, sigma):
-    # x: (nBatch, nWin, nSeq)
+    # x: (nBatch, 1, 1, nWin, nSeq)
     # mu: (nBasis)
     # sigma: (nBasis, outDim, inDim)
     # output: (nBatch, nBasis, outDim, inDim, nWin, nSeq)
 
     # x: (nBatch, 1, 1, 1, nWin, nSeq)
-    x = x[:, None, None, None, :,:]
+    x = x[:, None, ...]
     # mu: (nBasis, 1, 1, 1, 1)
     mu = mu[..., None, None, None, None]
     # sigma: (nBasis, outDim, inDim,  1, 1)
@@ -330,19 +333,20 @@ def solve_coef(gaussresps, trf):
     nWin = trf.shape[0]
     A = np.concatenate([gaussresps, np.ones((1,nWin))], axis = 0).T
     coefs = np.linalg.lstsq(A, trf, rcond=None)[0]
-    return coefs[:-1], coefs[-1]
+    return coefs
 
 class GaussianBasisTRF(torch.nn.Module):
     
     def __init__(
-        self, 
-        inDim, 
-        outDim, 
-        nBasis, 
+        self,
+        inDim,
+        outDim,
         nWin,
+        nBasis,
         sigmaMin = 6.4,
         sigmaMax = 6.4,
-        ifSumInDim = False
+        ifSumInDim = False,
+        device = 'cpu'
     ):
         super().__init__()
 
@@ -355,11 +359,13 @@ class GaussianBasisTRF(torch.nn.Module):
         k = 1 / (inDim * nWin)
         lower = - np.sqrt(k)
         upper = np.sqrt(k)
-        self.bias = torch.nn.Parameter(torch.ones(outDim))
-        torch.nn.init.uniform_(self.bias, a = lower, b = upper)
+        # self.bias = torch.nn.Parameter(torch.ones(outDim))
+        # torch.nn.init.uniform_(self.bias, a = lower, b = upper)
         ## sigma init
         sigma = torch.ones(nBasis, outDim, inDim) * sigmaMin
         self.sigma = torch.nn.Parameter(sigma)
+        TRFs = torch.empty((outDim, inDim, nWin),device=device)
+        self.register_buffer('TRFs',TRFs)
         # torch.nn.init.uniform_(self.sigma, a = lower, b = upper)
 
         ### Fixed Values
@@ -373,11 +379,13 @@ class GaussianBasisTRF(torch.nn.Module):
         sigmaMax = torch.tensor(sigmaMax)
         self.register_buffer('sigmaMax', sigmaMax)
         self.ifSumInDim = ifSumInDim
+        self.device = device
         
 
     def forward(self, x):
+        # print(x.shape)
         # output (nBatch, outDim, (inDim), nWin, nSeq)
-        # x: (nBatch, nWin, nSeq)
+        # x: x: (nBatch, 1, 1, nWin, nSeq)
         # currently just support the 'component' mode
         
         sigma = self.sigma
@@ -393,19 +401,21 @@ class GaussianBasisTRF(torch.nn.Module):
         
         # coefs: (nBasis + 1, outDim, inDim, 1, 1)
         coefs = self.coefs[..., None, None]
-
+        # print(gaussResps.shape)
         nBatch, _, outDim, inDim, nWin, nSeq = gaussResps.shape
         # (nBatch, nBasis+1, outDim, inDim, nWin, nSeq)
         aug_gaussResps = torch.cat([gaussResps, torch.ones(nBatch, 1, outDim, inDim, nWin, nSeq)], dim = -5)
+        # wGaussResps = coefs[:-1,...] * gaussResps
         wGaussResps = coefs * aug_gaussResps
+        # print(coefs[:,0,0,0,0])
         if self.ifSumInDim:
             # (nBatch, outDim, nWin, nSeq)
             wGaussResps = wGaussResps.sum((-5, -3))
-            wGaussResps = wGaussResps + self.bias[:, None, None]
+            # wGaussResps = wGaussResps + self.bias[:, None, None]
         else:
             # (nBatch, outDim, inDim, nWin, nSeq)
             wGaussResps = wGaussResps.sum((-5))
-            wGaussResps = wGaussResps + self.bias[:, None, None, None]
+            # wGaussResps = wGaussResps + self.bias[:, None, None, None]
         # print(wGaussResps)
         return wGaussResps
     
@@ -415,32 +425,29 @@ class GaussianBasisTRF(torch.nn.Module):
     
     @property
     def inDim(self):
-        return self.sigma.shape[0]
-    
-    @property
-    def outDim(self):
         return self.sigma.shape[2]
     
     @property
-    def nBasis(self):
+    def outDim(self):
         return self.sigma.shape[1]
     
-    def TRF(self):
-        # (outDim, inDim, nWin)
-        device = self.coefs.get_device()
-        timeEmbed = torch.arange(self.nWin, device = device)[None, :, None]
-        return self.forward(timeEmbed)[0,...,0]#.detach().cpu().numpy()
+    @property
+    def nBasis(self):
+        return self.sigma.shape[0]
     
     def fitTRFs(self, TRFs):
         '''
         TRFs is the numpy array of mtrf weights
         Shape: [nInDim, nLags, nOutput]
 
-        self.coefs: (nBasis, outDim, inDim)
+        self.coefs: (nBasis+1, outDim, inDim)
         sigma: (nBasis, outDim, inDim)
         '''
-        
-        x = torch.arange(self.nWin)
+        # print(TRFs.shape)
+        TRFs = torch.from_numpy(TRFs)
+        TRFs = TRFs.permute(2, 0, 1)
+        self.TRFs[:,:,:] = TRFs.to(self.device)[:,:,:]
+        x = torch.arange(self.nWin)[None, None, None, :, None]
         sigma = self.sigma
         # print(sigma)
         # (nBasis, outDim, inDim, nWin)
@@ -450,35 +457,69 @@ class GaussianBasisTRF(torch.nn.Module):
             sigma
         )[0, ..., 0].cpu().numpy()
 
-        nWin = TRFs.shape[1]
+        nWin = TRFs.shape[2]
         assert nWin == self.nWin
-        # (nBasis, outDim, inDim)
-        coefs = np.zeros(self.coef.shape)
+        # (nBasis+1, outDim, inDim)
+        coefs = np.zeros(self.coefs.shape)
         for i in range(self.outDim):
             for j in range(self.inDim):
-                t_trf = TRFs[j,:,i]
+                t_trf = TRFs[i,j,:]
                 # (nBasis, nWin)
                 t_gauss = gaussResps[:, i, j, :] 
                 t_coef = solve_coef(
                     t_gauss,
                     t_trf
                 )
+                # print(coefs[:, i, j].shape, t_coef.shape)
                 coefs[:, i, j] = t_coef
         
         with torch.no_grad():
-            self.coefs[:,:,:] = coefs
+            self.coefs[:,:,:] = torch.from_numpy(coefs)
             # (outDim, inDim, nWin)
             torchTRFs = self.TRF().cpu().numpy()
-            for j in range(self.nOutChan):
-                for i in range(self.nInChan):
+            for j in range(self.outDim):
+                for i in range(self.inDim):
                     curFTRF = torchTRFs[j, i,:]
-                    TRF = TRFs[j, i,:]
+                    TRF = TRFs[j, i, :]
                     assert np.around(pearsonr(curFTRF, TRF)[0]) >= 0.99
+
+    def TRF(self):
+        # (outDim, inDim, nWin)
+
+        #(nBatch, 1, 1, nWin, nSeq)
+        timeEmbed = torch.arange(self.nWin, device = self.device)[None,None,None, :, None]
+        return self.forward(timeEmbed)[0,...,0]#.detach().cpu().numpy()      
+
+    def vis(self):
+        if plt is None:
+            raise ValueError('matplotlib should be installed')
+        FTRFs = self.TRF().detach().cpu()
+        nInChan = self.inDim
+        nOutChan = self.outDim
+        fig, axs = plt.subplots(2)
+        fig.suptitle('top: original TRF, bottom: reconstructed TRF')
+        for j in range(nOutChan):
+            for i in range(nInChan):
+                TRF = self.TRFs[j,i,:].cpu()
+                FTRF = FTRFs[j,i,:].cpu()
+                # print(pearsonr(FTRF, TRF)[0])
+                axs[0].plot(TRF)
+                # if j == 0:
+                axs[1].plot(FTRF)
+        return fig
+
 
 
 class FourierBasisTRF(FuncBasisTRF):
     
-    def __init__(self,nInChan,nOutChan,nWin,nBasis,device = 'cpu'):
+    def __init__(
+        self,
+        nInChan,
+        nOutChan,
+        nWin,
+        nBasis,
+        device = 'cpu'
+    ):
         #TRFs the TRF for some channels
         super().__init__()
         # self.nBasis = nBasis
@@ -635,25 +676,29 @@ class FourierBasisTRF(FuncBasisTRF):
         return out
     
     def forward(self,x):
-        # x: (nBatch, 1, 1, nWin, nSeq)\
+        # x: (nBatch, 1, 1, nWin, nSeq)
         # return: 
         coefs = self.coefs
         out = self.vecFourierSum(self.nBasis,self.T,x,coefs)
         return out
         
-    def visResult(self):
-        if plt is None:
-            raise ValueError('matplotlib should be installed')
-        fig, axs = plt.subplots(2)
-        fig.suptitle('top: original TRF, bottom: reconstructed TRF')
-        nInChan = self.inDim
-        nOutChan = self.outDim
+    def TRF(self):
         FTRFs = self.vecFourierSum(
             self.nBasis,
             self.T,
             torch.arange(0,self.nWin).view(1,1,1,-1,1).to(self.device),
             self.coefs
         )[0][...,0]
+        return FTRFs
+    
+    def vis(self):
+        if plt is None:
+            raise ValueError('matplotlib should be installed')
+        FTRFs = self.TRF()
+        nInChan = self.inDim
+        nOutChan = self.outDim
+        fig, axs = plt.subplots(2)
+        fig.suptitle('top: original TRF, bottom: reconstructed TRF')
         for j in range(nOutChan):
             for i in range(nInChan):
                 TRF = self.TRFs[j,i,:].cpu()
@@ -661,6 +706,11 @@ class FourierBasisTRF(FuncBasisTRF):
                 axs[0].plot(TRF)
                 axs[1].plot(FTRF)
         return fig
+
+basisTRFNameMap = {
+    'gauss': GaussianBasisTRF,
+    'fourier': FourierBasisTRF
+}
 
 class FuncTRFsGen(torch.nn.Module):
     '''
@@ -675,6 +725,7 @@ class FuncTRFsGen(torch.nn.Module):
         tmin_ms,
         tmax_ms,
         fs,
+        basisTRFName = 'fourier',
         limitOfShift_idx = 7,
         nBasis = 21, 
         mode = '',
@@ -695,13 +746,14 @@ class FuncTRFsGen(torch.nn.Module):
         self.transformer = transformer
         self.nMiddleParam = len(mode.split(','))
         self.device = device
-        self.basisTRF:FuncBasisTRF = FourierBasisTRF(
+        self.basisTRF:FuncBasisTRF = basisTRFNameMap[basisTRFName](
             inDim, 
             outDim, 
             nWin + 2 * limitOfShift_idx, 
             nBasis,
             device=device
         )
+
 
         if transformer is None:
             inDim, outDim, device = self.expectedInOutDimOfFeatExtracter()
@@ -948,7 +1000,7 @@ class ASTRF(torch.nn.Module):
         raise NotImplementedError()
         return [i for i in self.oNonLinear.parameters()] + [self.bias]
 
-    def set_liearn_weights(self, w, b):
+    def set_linear_weights(self, w, b):
         #w: (nInChan, nLag, nOutChan)
         self.ltiTRFsGen.load_mtrf_weights(
             w,
@@ -1042,7 +1094,11 @@ class ASTRF(torch.nn.Module):
         return targetTensor
     
     def get_trfs(self, x, featOnsetIdxs = None):
-        return self.trfsGen(x, featOnsetIdxs)
+        if self.if_enable_trfsGen:
+            return self.trfsGen(x, featOnsetIdxs)
+        else:
+            return self.ltiTRFsGen(x)
+        
 
 class ASCNNTRF(ASTRF):
     #perform CNNTRF within intervals,
