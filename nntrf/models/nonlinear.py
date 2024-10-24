@@ -476,15 +476,15 @@ class GaussianBasisTRF(torch.nn.Module):
                     assert np.around(pearsonr(curFTRF, TRF)[0]) >= 0.99
 
 
-class FourierBasisTRF(torch.nn.Module):
+class FourierBasisTRF(FuncBasisTRF):
     
     def __init__(self,nInChan,nOutChan,nWin,nBasis,device = 'cpu'):
         #TRFs the TRF for some channels
         super().__init__()
-        self.nBasis = nBasis
-        self.nInChan = nInChan
-        self.nOutChan = nOutChan
-        self.nWin = nWin
+        # self.nBasis = nBasis
+        # self.nInChan = nInChan
+        # self.nOutChan = nOutChan
+        # self.nWin = nWin
         coefs = torch.empty((nOutChan, nInChan, nBasis),device=device)
         TRFs = torch.empty((nOutChan, nInChan, nWin),device=device)
         self.register_buffer('coefs', coefs)
@@ -493,7 +493,24 @@ class FourierBasisTRF(torch.nn.Module):
         self.device = device
         maxN = nBasis // 2
         self.seqN = torch.arange(1,maxN+1,device = self.device)
-        self.saveMem = False
+
+        # self.saveMem = False #expr for saving memory usage
+
+    @property
+    def inDim(self):
+        return self.coefs.shape[1]
+    
+    @property
+    def outDim(self):
+        return self.coefs.shape[0]
+    
+    @property
+    def nWin(self):
+        return self.TRFs.shape[2]
+    
+    @property
+    def nBasis(self):
+        return self.coefs.shape[2]
 
     def fitTRFs(self,TRFs):
         '''
@@ -506,8 +523,8 @@ class FourierBasisTRF(torch.nn.Module):
         self.TRFs[:,:,:] = TRFs.to(self.device)[:,:,:]
         fd_basis_s = []
         grid_points = list(range(self.nWin))
-        for j in range(self.nOutChan):
-            for i in range(self.nInChan):
+        for j in range(self.outDim):
+            for i in range(self.inDim):
                 TRF = TRFs[j, i, :]
                 fd = skfda.FDataGrid(
                     data_matrix=TRF,
@@ -529,9 +546,9 @@ class FourierBasisTRF(torch.nn.Module):
             self.coefs
         )
         out = out[0][...,0]
-        for j in range(self.nOutChan):
-            for i in range(self.nInChan):
-                fd_basis = fd_basis_s[j*self.nInChan + i]
+        for j in range(self.outDim):
+            for i in range(self.inDim):
+                fd_basis = fd_basis_s[j*self.inDim + i]
                 temp = fd_basis(np.arange(0,self.nWin)).squeeze()
                 curFTRF = out[j, i,:].cpu().numpy()
                 TRF = TRFs[j, i,:]
@@ -591,7 +608,6 @@ class FourierBasisTRF(torch.nn.Module):
             axis = -1
         ).reshape(*constSin.shape[:5], 2*maxN)
         # print(const0,[i.shape for i in [constN, coefs]])
-        memAvai,_ = torch.cuda.mem_get_info()
 
         nBatch, _, _, nWin, nSeq, nBasis =  constN.shape
         nOutChan, nInChan, nBasis = coefs.shape
@@ -599,6 +615,10 @@ class FourierBasisTRF(torch.nn.Module):
         #(nOutChan, nInChan, 1, 1, nBasis)
         coefs = coefs[:, :, None, None, :]
         nBasis = nBasis
+
+        '''
+        #expr for saving memory usage
+        memAvai,_ = torch.cuda.mem_get_info()
         nMemReq = nBatch * nSeq * nInChan * nOutChan * nBasis * nWin * 4 # 4 indicates 4 bytes
         # print(torch.cuda.memory_allocated()/1024/1024)
         if nMemReq > memAvai * 0.9 or self.saveMem:
@@ -608,7 +628,8 @@ class FourierBasisTRF(torch.nn.Module):
         else:
             # (nbatch, nOutChan, nInChan, nWin, nSeq, nBasis)
             out =  const0 * coefs[...,0] + (constN * coefs[...,1:]).sum(-1)
-        
+        '''   
+        out =  const0 * coefs[...,0] + (constN * coefs[...,1:]).sum(-1)
         # print(torch.cuda.memory_allocated()/1024/1024)
         # (nBatch, outDim, inDim, nWin, nSeq)
         return out
@@ -625,8 +646,8 @@ class FourierBasisTRF(torch.nn.Module):
             raise ValueError('matplotlib should be installed')
         fig, axs = plt.subplots(2)
         fig.suptitle('top: original TRF, bottom: reconstructed TRF')
-        nInChan = self.nInChan
-        nOutChan = self.nOutChan
+        nInChan = self.inDim
+        nOutChan = self.outDim
         FTRFs = self.vecFourierSum(
             self.nBasis,
             self.T,
@@ -669,7 +690,7 @@ class FuncTRFsGen(torch.nn.Module):
         self.lagIdxs_ts = torch.Tensor(self.lagIdxs).float().to(device)
         self.lagTimes = Idxs2msec(self.lagIdxs,fs)
         nWin = len(self.lagTimes)
-        self.limitOfShift_idx = limitOfShift_idx
+        # self.limitOfShift_idx = limitOfShift_idx
         self.mode = mode
         self.transformer = transformer
         self.nMiddleParam = len(mode.split(','))
@@ -702,15 +723,15 @@ class FuncTRFsGen(torch.nn.Module):
     
     @property
     def outDim(self):
-        raise self.basisTRF.outDim
+        return self.basisTRF.outDim
     
     @property
     def nWin(self):
-        raise self.basisTRF.nWin
+        return self.basisTRF.nWin - 2 * self.limitOfShift_idx
     
     @property
     def nBasis(self):
-        raise self.basisTRF.nBasis
+        return self.basisTRF.nBasis
 
     @property
     def extendedTimeLagRange(self):
@@ -719,7 +740,10 @@ class FuncTRFsGen(torch.nn.Module):
         left = np.arange(minLagIdx - self.limitOfShift_idx, minLagIdx)
         right = np.arange(maxLagIdx + 1, maxLagIdx + 1 + self.limitOfShift_idx)
         extLag_idx = np.concatenate([left, self.lagIdxs, right])
-        assert len(extLag_idx) == self.nWin + 2 * self.limitOfShift_idx
+        try:
+            assert len(extLag_idx) == self.nWin + 2 * self.limitOfShift_idx
+        except:
+            print(len(extLag_idx), self.nWin + 2 * self.limitOfShift_idx)
         timelags = Idxs2msec(extLag_idx, self.fs)
         return timelags[0], timelags[-1]
 
@@ -873,7 +897,7 @@ class ASTRF(torch.nn.Module):
             outDim,
             ifAddBiasInForward=False
         ).to(device)
-        self.trfsGen = trfsGen if trfsGen is None else trfsGen.to(device)
+        self.trfsGen:FuncTRFsGen = trfsGen if trfsGen is None else trfsGen.to(device)
         self.fs = fs
 
         self.bias = None

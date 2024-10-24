@@ -3,7 +3,7 @@ import torch
 from mtrf.model import TRF, load_sample_data
 from nntrf.models import ASTRF, FuncTRFsGen, WordTRFEmbedGen, WordTRFEmbedGenTokenizer
 from nntrf.models import ASCNNTRF, CNNTRF
-device = torch.device('cuda')
+device = torch.device('cpu')
 
 def testASTRF():
     trf = TRF()
@@ -133,22 +133,32 @@ def testFuncTRF():
     stimulus, response, fs = load_sample_data(n_segments=9)
     stimulus = stimulus[:3]
     response = response[:3]
+
+    #prepare the ASTRF model
     model = ASTRF(16, 128, 0, 700, fs, device = device)
     trfsGen = FuncTRFsGen(16, 128, 0, 700, fs, device = device)
     extLagMin, extLagMax = trfsGen.extendedTimeLagRange
+
+    #prepare the mtrf model
     trf = TRF(direction=1)
-    trf.train(stimulus, response, fs, extLagMin/1000, extLagMax/1000, 100)
+    trf.train(stimulus, response, fs, extLagMin/1000, extLagMax/1000, 1000)
+
+    #train the trfsGen for ASTRF
     trfsGen.fitFuncTRF(trf.weights)
     fig = trfsGen.basisTRF.visResult()
     fig.savefig('funcTRF.png')
-    model.setTRFsGen(trfsGen)
-    model.ifEnableUserTRFGen = True
+    model.set_trfs_gen(trfsGen)
+    model.if_enable_trfsGen = True
     model = model.eval()
 
+    #get mtrf prediction
     trf.times = trf.times[7:-7]
     trf.weights = trf.weights[:,7:-7,:]
+    print(trf.weights.shape)
     predMTRF = trf.predict(stimulus)
     predMTRF = np.stack(predMTRF, axis = 0)
+
+    #get ASTRF prediction
     x = torch.stack([torch.tensor(i.T) for i in stimulus], dim = 0).to(device).float()
     nBatch = x.shape[0]
     nSeq = x.shape[2]
@@ -156,8 +166,8 @@ def testFuncTRF():
     with torch.no_grad():
         predNNTRF = model(x, timeinfo).cpu().detach().permute(0,2,1).numpy()
     # print(predNNTRF, predMTRF)
-
     assert np.allclose(predNNTRF, predMTRF, atol = 1e-1)
+
     from scipy.stats import pearsonr
     nBatch, nSeq, nChan = predNNTRF.shape
     rs = []
@@ -167,11 +177,17 @@ def testFuncTRF():
             rs.append(r)
     print(np.mean(rs))
     assert np.mean(rs) > 0.99
+
+
+    '''
+    test the savemem expr feature
     with torch.no_grad():
-        model.trfsGen.basisTRF.saveMem = True
+        # model.trfsGen.basisTRF.saveMem = True
         predNNTRF2 = model(x, timeinfo).cpu().detach().permute(0,2,1).numpy()
     # print(predNNTRF, predNNTRF2)
     assert np.allclose(predNNTRF, predNNTRF2, atol = 1e-6)
+    '''
+    
 
 def testTRFEmbed():
     wordsDict = {'he':1, 'is':2, 'a':3, 'old':4, 'man':5, 'who':6, 'has':7, 'been':8, 'fishing':9}
