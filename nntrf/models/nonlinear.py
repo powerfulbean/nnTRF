@@ -712,6 +712,20 @@ basisTRFNameMap = {
     'fourier': FourierBasisTRF
 }
 
+
+class TRFsGen(torch.nn.Module):
+
+    def forward(self, x, featOnsetIdx):
+        '''
+        input:
+             x: input to be used to derive the 
+                transformation parameters TRFs
+             featOnsetIdx: time index of item 
+                in the transformed x to be picked as real transformation parameters
+        '''
+        pass
+
+
 class FuncTRFsGen(torch.nn.Module):
     '''
     Implement the functional TRF generator, generate dynamically 
@@ -949,7 +963,7 @@ class ASTRF(torch.nn.Module):
             outDim,
             ifAddBiasInForward=False
         ).to(device)
-        self.trfsGen:FuncTRFsGen = trfsGen if trfsGen is None else trfsGen.to(device)
+        self.trfsGen:TRFsGen = trfsGen if trfsGen is None else trfsGen.to(device)
         self.fs = fs
 
         self.bias = None
@@ -1069,7 +1083,6 @@ class ASTRF(torch.nn.Module):
         nGlobLen = max(nRealLens)
         x = seqLast_pad_zero(x)
         trfOnsetIdxs = seqLast_pad_zero(trfOnsetIdxs, value = -1)
-        
         
         # if x is time series
         featOnsetIdxs = None
