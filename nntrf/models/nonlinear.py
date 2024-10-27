@@ -427,8 +427,6 @@ class GaussianBasisTRF(FuncBasisTRF):
         # x: x: (nBatch, 1, 1, nWin, nSeq)
         # currently just support the 'component' mode
         x = c * (self.time_embedding - b)
-        if not isinstance(a, int):
-            print(a.shape, self.vec_gauss_sum(x).shape)
         wGaussResps = a * self.vec_gauss_sum(x)
         # print(coefs[:,0,0,0,0])
         if self.ifSumInDim:
