@@ -130,7 +130,7 @@ def testASCNNTRFLTI(tmin, tmax):
     assert np.allclose(predNNTRF, predMTRF, atol = 1e-5)
 
 
-def testFuncTRF(basisTRFName):
+def testFuncTRF(basisTRFName, ifFitMTRFWithExtTimeLag = True):
     stimulus, response, fs = load_sample_data(n_segments=9)
     stimulus = [s.mean(axis=1, keepdims=True) for s in stimulus]
     stimulus = stimulus#[:3]
@@ -143,7 +143,10 @@ def testFuncTRF(basisTRFName):
     print(extLagMin, extLagMax)
     #prepare the mtrf model
     trf = TRF(direction=1)
-    trf.train(stimulus, response, fs, extLagMin/1000, extLagMax/1000, 1000)
+    if ifFitMTRFWithExtTimeLag:
+        trf.train(stimulus, response, fs, extLagMin/1000, extLagMax/1000, 1000)
+    else:
+        trf.train(stimulus, response, fs, 0/1000, 700/1000, 1000)
 
     #train the trfsGen for ASTRF
     trfsGen.fitFuncTRF(trf.weights)
@@ -154,8 +157,9 @@ def testFuncTRF(basisTRFName):
     model = model.eval()
 
     #get mtrf prediction
-    trf.times = trf.times[7:-7]
-    trf.weights = trf.weights[:,7:-7,:]
+    if ifFitMTRFWithExtTimeLag:
+        trf.times = trf.times[7:-7]
+        trf.weights = trf.weights[:,7:-7,:]
     print(trf.weights.shape)
     predMTRF = trf.predict(stimulus)
     predMTRF = np.stack(predMTRF, axis = 0)
@@ -237,6 +241,6 @@ def testTRFEmbed():
 # testASCNNTRFLTI(0, 300)
 # testASTRF()
 # testASTRFLTI()
-testFuncTRF('gauss')
-# testFuncTRF('fourier')
+# testFuncTRF('gauss', False)
+testFuncTRF('fourier')
 # testTRFEmbed()

@@ -14,9 +14,16 @@ try:
 except:
     plt = None
 
+try:
+    from mtrf.model import TRF
+except:
+    TRF = None
 
-# will extend to directly remove the existence of oneOfBatch func
-# in the future
+
+def fit_forward_mtrf(stim, resp, fs, tmin_ms, tmax_ms, regularization, k):
+    trf = TRF(direction=1)
+    trf.train(stim, resp, fs, tmin_ms / 1e3, tmax_ms / 1e3, regularization, k = k)
+    return trf.weights, trf.bias
 
 def seqLast_pad_zero(seq, value = 0):
     maxLen = max([i.shape[-1] for i in seq])
@@ -308,10 +315,13 @@ class FuncBasisTRF(torch.nn.Module):
     def vis(self):
         raise NotImplementedError
     
-    def forward(self, x):
+    def forward(self, a,  b, c):
         raise NotImplementedError
     
     def fitTRFs(self, TRFs):
+        raise NotImplementedError
+    
+    def get_time_embedding(self):
         raise NotImplementedError
 
 def build_gaussian_response(x, mu, sigma):
@@ -343,6 +353,7 @@ class GaussianBasisTRF(torch.nn.Module):
         outDim,
         nWin,
         nBasis,
+        timeshiftLimit_idx,
         sigmaMin = 6.4,
         sigmaMax = 6.4,
         ifSumInDim = False,
@@ -518,6 +529,7 @@ class FourierBasisTRF(FuncBasisTRF):
         nOutChan,
         nWin,
         nBasis,
+        timeshiftLimit_idx,
         device = 'cpu'
     ):
         #TRFs the TRF for some channels
@@ -526,6 +538,8 @@ class FourierBasisTRF(FuncBasisTRF):
         # self.nInChan = nInChan
         # self.nOutChan = nOutChan
         # self.nWin = nWin
+        self._ori_win = nWin
+        nWin = nWin + 2 * timeshiftLimit_idx
         coefs = torch.empty((nOutChan, nInChan, nBasis),device=device)
         TRFs = torch.empty((nOutChan, nInChan, nWin),device=device)
         self.register_buffer('coefs', coefs)
@@ -534,8 +548,15 @@ class FourierBasisTRF(FuncBasisTRF):
         self.device = device
         maxN = nBasis // 2
         self.seqN = torch.arange(1,maxN+1,device = self.device)
-
+        self.timeshiftLimit_idx = torch.tensor(timeshiftLimit_idx)
+        self.time_embedding = self.get_time_embedding()
         # self.saveMem = False #expr for saving memory usage
+
+    def get_time_embedding(self):
+        #(1, 1, 1, nWin, 1) 
+        return torch.arange(0,self._ori_win)\
+            .view(1,1,1,-1,1)\
+                .to(self.device)
 
     @property
     def inDim(self):
@@ -675,11 +696,20 @@ class FourierBasisTRF(FuncBasisTRF):
         # (nBatch, outDim, inDim, nWin, nSeq)
         return out
     
-    def forward(self,x):
+    def forward(self,a, b, c):
+        # a,b,c (nBatch, 1, 1, 1, nSeq)
+        #self.time_embedding #(1, 1, 1, nWin, 1) 
+        
         # x: (nBatch, 1, 1, nWin, nSeq)
+        nSeq = self.time_embedding + self.timeshiftLimit_idx
+        x = c * (nSeq - b)
+        
+        #(nBatch, outDim, inDim, nWin, nSeq)
+        # nonLinTRFs = aSeq * self.basisTRF( cSeq * ( nSeq -  bSeq) ) 
+
         # return: 
         coefs = self.coefs
-        out = self.vecFourierSum(self.nBasis,self.T,x,coefs)
+        out = a * self.vecFourierSum(self.nBasis,self.T,x,coefs)
         return out
         
     def TRF(self):
@@ -755,7 +785,6 @@ class FuncTRFsGen(torch.nn.Module):
         self.lagIdxs_ts = torch.Tensor(self.lagIdxs).float().to(device)
         self.lagTimes = Idxs2msec(self.lagIdxs,fs)
         nWin = len(self.lagTimes)
-        # self.limitOfShift_idx = limitOfShift_idx
         self.mode = mode
         self.transformer = transformer
         self.nMiddleParam = len(mode.split(','))
@@ -763,8 +792,9 @@ class FuncTRFsGen(torch.nn.Module):
         self.basisTRF:FuncBasisTRF = basisTRFNameMap[basisTRFName](
             inDim, 
             outDim, 
-            nWin + 2 * limitOfShift_idx, 
+            nWin, 
             nBasis,
+            timeshiftLimit_idx = limitOfShift_idx, 
             device=device
         )
 
@@ -897,10 +927,11 @@ class FuncTRFsGen(torch.nn.Module):
         aSeq, bSeq, cSeq = self.getTransformParams(x, featOnsetIdx)
         
         #(1, 1, 1, nWin, 1) 
-        nSeq = self.lagIdxs_ts[None, None, None, :, None] + self.limitOfShift_idx 
-        
+        # nSeq = self.lagIdxs_ts[None, None, None, :, None] + self.limitOfShift_idx 
+        # print(aSeq, bSeq, cSeq)x
         #(nBatch, outDim, inDim, nWin, nSeq)
-        nonLinTRFs = aSeq * self.basisTRF( cSeq * ( nSeq -  bSeq) ) 
+        # nonLinTRFs = aSeq * self.basisTRF( cSeq * ( nSeq -  bSeq) ) 
+        nonLinTRFs = self.basisTRF(aSeq, bSeq, cSeq)
         # print(torch.cuda.memory_allocated()/1024/1024)
 
         #(nBatch, outDim, nWin, nSeq)
