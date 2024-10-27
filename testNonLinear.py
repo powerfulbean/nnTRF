@@ -241,6 +241,6 @@ def testTRFEmbed():
 # testASCNNTRFLTI(0, 300)
 # testASTRF()
 # testASTRFLTI()
-# testFuncTRF('gauss', False)
+testFuncTRF('gauss', False)
 testFuncTRF('fourier')
 # testTRFEmbed()
