@@ -298,9 +298,12 @@ class FuncBasisTRF(torch.nn.Module):
         self._ori_win = nWin
         nWin = nWin + 2 * timeshiftLimit_idx
         self.timeshiftLimit_idx = torch.tensor(timeshiftLimit_idx)
-        self.time_embedding = self.get_time_embedding(device) + self.timeshiftLimit_idx
+        self.time_embedding = self.get_time_embedding(device) 
         TRFs = torch.empty((outDim, inDim, nWin),device=device)
         self.register_buffer('TRFs',TRFs)
+
+    def corrected_time_embedding(self, t):
+        return t + + self.timeshiftLimit_idx
 
     @property
     def inDim(self):
@@ -431,6 +434,7 @@ class GaussianBasisTRF(FuncBasisTRF):
         # x: x: (nBatch, 1, 1, nWin, nSeq)
         # currently just support the 'component' mode
         x = c * (self.time_embedding - b)
+        x = self.corrected_time_embedding(x)
         wGaussResps = a * self.vec_gauss_sum(x)
         # print(coefs[:,0,0,0,0])
         if self.ifSumInDim:
@@ -678,7 +682,7 @@ class FourierBasisTRF(FuncBasisTRF):
         # x: (nBatch, 1, 1, nWin, nSeq)
         nSeq = self.time_embedding
         x = c * (nSeq - b)
-        
+        x = self.corrected_time_embedding(x)
         #(nBatch, outDim, inDim, nWin, nSeq)
         # nonLinTRFs = aSeq * self.basisTRF( cSeq * ( nSeq -  bSeq) ) 
 
