@@ -293,22 +293,26 @@ class CustomKernelCNNTRF(torch.nn.Module):
 
 class FuncBasisTRF(torch.nn.Module):
 
-    def __init__(self,nWin, device) -> None:
+    def __init__(self, inDim, outDim, nWin, timeshiftLimit_idx ,device) -> None:
         super().__init__()
         self._ori_win = nWin
-        self.time_embedding = self.get_time_embedding(device)
+        nWin = nWin + 2 * timeshiftLimit_idx
+        self.timeshiftLimit_idx = torch.tensor(timeshiftLimit_idx)
+        self.time_embedding = self.get_time_embedding(device) + self.timeshiftLimit_idx
+        TRFs = torch.empty((outDim, inDim, nWin),device=device)
+        self.register_buffer('TRFs',TRFs)
 
     @property
     def inDim(self):
-        raise NotImplementedError
+        return self.TRFs.shape[1]
     
     @property
     def outDim(self):
-        raise NotImplementedError
+        return self.TRFs.shape[0]
     
     @property
     def nWin(self):
-        raise NotImplementedError
+        return self.TRFs.shape[2]
     
     @property
     def nBasis(self):
@@ -360,13 +364,15 @@ class GaussianBasisTRF(FuncBasisTRF):
         outDim,
         nWin,
         nBasis,
-        timeshiftLimit_idx,
+        timeshiftLimit_idx = 0,
         sigmaMin = 6.4,
         sigmaMax = 6.4,
         ifSumInDim = False,
         device = 'cpu'
     ):
-        super().__init__(nWin, device)
+        super().__init__(inDim, outDim, nWin, timeshiftLimit_idx, device)
+        nWin = self.nWin
+        print(nWin)
         ### Fittable Parameters
         ## out projection init
         coefs = torch.ones((nBasis + 1, outDim, inDim))
@@ -381,8 +387,6 @@ class GaussianBasisTRF(FuncBasisTRF):
         ## sigma init
         sigma = torch.ones(nBasis, outDim, inDim) * sigmaMin
         self.sigma = torch.nn.Parameter(sigma)
-        TRFs = torch.empty((outDim, inDim, nWin),device=device)
-        self.register_buffer('TRFs',TRFs)
         # torch.nn.init.uniform_(self.sigma, a = lower, b = upper)
 
         ### Fixed Values
@@ -437,18 +441,6 @@ class GaussianBasisTRF(FuncBasisTRF):
         return wGaussResps
     
     @property
-    def nWin(self):
-        return self.TRFs.shape[2]
-    
-    @property
-    def inDim(self):
-        return self.sigma.shape[2]
-    
-    @property
-    def outDim(self):
-        return self.sigma.shape[1]
-    
-    @property
     def nBasis(self):
         return self.sigma.shape[0]
     
@@ -492,8 +484,10 @@ class GaussianBasisTRF(FuncBasisTRF):
         
         with torch.no_grad():
             self.coefs[:,:,:] = torch.from_numpy(coefs)
-            # (outDim, inDim, nWin)
-            torchTRFs = self.TRF().cpu().numpy()
+            # (nBatch, outDim, inDim, nWin, nSeq)
+            torchTRFs = self.vec_gauss_sum(
+                torch.arange(0,self.nWin).view(1,1,1,-1,1).to(self.device),
+            ).cpu().numpy()[0, ..., 0]
             for j in range(self.outDim):
                 for i in range(self.inDim):
                     curFTRF = torchTRFs[j, i,:]
@@ -538,36 +532,20 @@ class FourierBasisTRF(FuncBasisTRF):
         device = 'cpu'
     ):
         #TRFs the TRF for some channels
-        super().__init__(nWin, device)
+        super().__init__(nInChan, nOutChan, nWin,timeshiftLimit_idx, device)
         # self.nBasis = nBasis
         # self.nInChan = nInChan
         # self.nOutChan = nOutChan
         # self.nWin = nWin
-        self._ori_win = nWin
-        nWin = nWin + 2 * timeshiftLimit_idx
+        nWin = self.nWin
         coefs = torch.empty((nOutChan, nInChan, nBasis),device=device)
-        TRFs = torch.empty((nOutChan, nInChan, nWin),device=device)
         self.register_buffer('coefs', coefs)
-        self.register_buffer('TRFs',TRFs)
         self.T = self.nWin - 1
         self.device = device
         maxN = nBasis // 2
         self.seqN = torch.arange(1,maxN+1,device = self.device)
-        self.timeshiftLimit_idx = torch.tensor(timeshiftLimit_idx)
         # self.saveMem = False #expr for saving memory usage
 
-    @property
-    def inDim(self):
-        return self.coefs.shape[1]
-    
-    @property
-    def outDim(self):
-        return self.coefs.shape[0]
-    
-    @property
-    def nWin(self):
-        return self.TRFs.shape[2]
-    
     @property
     def nBasis(self):
         return self.coefs.shape[2]
@@ -604,8 +582,7 @@ class FourierBasisTRF(FuncBasisTRF):
             self.T,
             torch.arange(0,self.nWin).view(1,1,1,-1,1).to(self.device),
             self.coefs
-        )
-        out = out[0][...,0]
+        )[0, ..., 0]
         for j in range(self.outDim):
             for i in range(self.inDim):
                 fd_basis = fd_basis_s[j*self.inDim + i]
@@ -699,7 +676,7 @@ class FourierBasisTRF(FuncBasisTRF):
         #self.time_embedding #(1, 1, 1, nWin, 1) 
         
         # x: (nBatch, 1, 1, nWin, nSeq)
-        nSeq = self.time_embedding + self.timeshiftLimit_idx
+        nSeq = self.time_embedding
         x = c * (nSeq - b)
         
         #(nBatch, outDim, inDim, nWin, nSeq)
