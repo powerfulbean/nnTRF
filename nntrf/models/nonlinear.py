@@ -293,17 +293,19 @@ class CustomKernelCNNTRF(torch.nn.Module):
 
 class FuncBasisTRF(torch.nn.Module):
 
-    def __init__(self, inDim, outDim, nWin, timeshiftLimit_idx ,device) -> None:
+    def __init__(self, inDim, outDim, tmin_idx, tmax_idx, timeshiftLimit_idx ,device) -> None:
         super().__init__()
-        self._ori_win = nWin
-        nWin = nWin + 2 * timeshiftLimit_idx
         self.timeshiftLimit_idx = torch.tensor(timeshiftLimit_idx)
-        self.time_embedding = self.get_time_embedding(device) 
+        self.time_embedding = self.get_time_embedding(
+            tmin_idx, tmax_idx, device) 
+        self.time_embedding_ext = self.get_time_embedding(
+            tmin_idx-timeshiftLimit_idx, tmax_idx+timeshiftLimit_idx, device) 
+        nWin = self.time_embedding_ext.shape[-2]
         TRFs = torch.empty((outDim, inDim, nWin),device=device)
         self.register_buffer('TRFs',TRFs)
 
-    def corrected_time_embedding(self, t):
-        return t + + self.timeshiftLimit_idx
+    # def corrected_time_embedding(self, t):
+        # return t + + self.timeshiftLimit_idx
 
     @property
     def inDim(self):
@@ -333,9 +335,9 @@ class FuncBasisTRF(torch.nn.Module):
     def fitTRFs(self, TRFs):
         raise NotImplementedError
     
-    def get_time_embedding(self, device = 'cpu'):
+    def get_time_embedding(self, tmin_idx, tmax_idx, device = 'cpu'):
         #(1, 1, 1, nWin, 1) 
-        return torch.arange(0,self._ori_win, device=device)\
+        return torch.arange(tmin_idx,tmax_idx+1, device=device)\
             .view(1,1,1,-1,1)
 
 def build_gaussian_response(x, mu, sigma):
@@ -365,7 +367,8 @@ class GaussianBasisTRF(FuncBasisTRF):
         self,
         inDim,
         outDim,
-        nWin,
+        tmin_idx, 
+        tmax_idx,
         nBasis,
         timeshiftLimit_idx = 0,
         sigmaMin = 6.4,
@@ -373,7 +376,7 @@ class GaussianBasisTRF(FuncBasisTRF):
         ifSumInDim = False,
         device = 'cpu'
     ):
-        super().__init__(inDim, outDim, nWin, timeshiftLimit_idx, device)
+        super().__init__(inDim, outDim, tmin_idx, tmax_idx, timeshiftLimit_idx, device)
         nWin = self.nWin
         print(nWin)
         ### Fittable Parameters
@@ -434,7 +437,7 @@ class GaussianBasisTRF(FuncBasisTRF):
         # x: x: (nBatch, 1, 1, nWin, nSeq)
         # currently just support the 'component' mode
         x = c * (self.time_embedding - b)
-        x = self.corrected_time_embedding(x)
+        # x = self.corrected_time_embedding(x)
         wGaussResps = a * self.vec_gauss_sum(x)
         # print(coefs[:,0,0,0,0])
         if self.ifSumInDim:
@@ -460,7 +463,7 @@ class GaussianBasisTRF(FuncBasisTRF):
         TRFs = torch.from_numpy(TRFs)
         TRFs = TRFs.permute(2, 0, 1)
         self.TRFs[:,:,:] = TRFs.to(self.device)[:,:,:]
-        x = torch.arange(self.nWin)[None, None, None, :, None]
+        x = self.time_embedding_ext
         sigma = self.sigma
         # print(sigma)
         # (nBasis, outDim, inDim, nWin)
@@ -490,7 +493,7 @@ class GaussianBasisTRF(FuncBasisTRF):
             self.coefs[:,:,:] = torch.from_numpy(coefs)
             # (nBatch, outDim, inDim, nWin, nSeq)
             torchTRFs = self.vec_gauss_sum(
-                torch.arange(0,self.nWin).view(1,1,1,-1,1).to(self.device),
+                self.time_embedding_ext,
             ).cpu().numpy()[0, ..., 0]
             for j in range(self.outDim):
                 for i in range(self.inDim):
@@ -530,18 +533,18 @@ class FourierBasisTRF(FuncBasisTRF):
         self,
         nInChan,
         nOutChan,
-        nWin,
+        tmin_idx,
+        tmax_idx,
         nBasis,
         timeshiftLimit_idx,
         device = 'cpu'
     ):
         #TRFs the TRF for some channels
-        super().__init__(nInChan, nOutChan, nWin,timeshiftLimit_idx, device)
+        super().__init__(nInChan, nOutChan, tmin_idx, tmax_idx, timeshiftLimit_idx, device)
         # self.nBasis = nBasis
         # self.nInChan = nInChan
         # self.nOutChan = nOutChan
         # self.nWin = nWin
-        nWin = self.nWin
         coefs = torch.empty((nOutChan, nInChan, nBasis),device=device)
         self.register_buffer('coefs', coefs)
         self.T = self.nWin - 1
@@ -564,7 +567,8 @@ class FourierBasisTRF(FuncBasisTRF):
         TRFs = TRFs.permute(2, 0, 1)
         self.TRFs[:,:,:] = TRFs.to(self.device)[:,:,:]
         fd_basis_s = []
-        grid_points = list(range(self.nWin))
+        # grid_points = list(range(self.nWin))
+        grid_points = self.time_embedding_ext.squeeze().numpy()
         for j in range(self.outDim):
             for i in range(self.inDim):
                 TRF = TRFs[j, i, :]
@@ -584,13 +588,13 @@ class FourierBasisTRF(FuncBasisTRF):
         out = self.vec_fourier_sum(
             self.nBasis,
             self.T,
-            torch.arange(0,self.nWin).view(1,1,1,-1,1).to(self.device),
+            self.time_embedding_ext,
             self.coefs
         )[0, ..., 0]
         for j in range(self.outDim):
             for i in range(self.inDim):
                 fd_basis = fd_basis_s[j*self.inDim + i]
-                temp = fd_basis(np.arange(0,self.nWin)).squeeze()
+                temp = fd_basis(grid_points).squeeze() #np.arange(0,self.nWin)
                 curFTRF = out[j, i,:].cpu().numpy()
                 TRF = TRFs[j, i,:]
                 assert np.around(pearsonr(TRF, temp)[0]) >= 0.99
@@ -682,7 +686,7 @@ class FourierBasisTRF(FuncBasisTRF):
         # x: (nBatch, 1, 1, nWin, nSeq)
         nSeq = self.time_embedding
         x = c * (nSeq - b)
-        x = self.corrected_time_embedding(x)
+        # x = self.corrected_time_embedding(x)
         #(nBatch, outDim, inDim, nWin, nSeq)
         # nonLinTRFs = aSeq * self.basisTRF( cSeq * ( nSeq -  bSeq) ) 
 
@@ -771,7 +775,8 @@ class FuncTRFsGen(torch.nn.Module):
         self.basisTRF:FuncBasisTRF = basisTRFNameMap[basisTRFName](
             inDim, 
             outDim, 
-            nWin, 
+            self.lagIdxs[0],
+            self.lagIdxs[-1], 
             nBasis,
             timeshiftLimit_idx = limitOfShift_idx, 
             device=device
