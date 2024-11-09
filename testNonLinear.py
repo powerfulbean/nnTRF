@@ -138,7 +138,7 @@ def testFuncTRF(basisTRFName, ifFitMTRFWithExtTimeLag = True):
 
     #prepare the ASTRF model
     model = ASTRF(1, 128, 0, 700, fs, device = device)
-    trfsGen = FuncTRFsGen(1, 128, 0, 700, fs, basisTRFName=basisTRFName, device = device)
+    trfsGen = FuncTRFsGen(1, 128, 0, 700, fs, basisTRFName=basisTRFName, limitOfShift_idx=13, device = device)
     extLagMin, extLagMax = trfsGen.extendedTimeLagRange
     print(extLagMin, extLagMax)
     #prepare the mtrf model
@@ -151,15 +151,16 @@ def testFuncTRF(basisTRFName, ifFitMTRFWithExtTimeLag = True):
     #train the trfsGen for ASTRF
     trfsGen.fitFuncTRF(trf.weights)
     fig = trfsGen.basisTRF.vis()
-    fig.savefig('funcTRF.png')
+    fig.savefig(f'funcTRF_{basisTRFName}.png')
     model.set_trfs_gen(trfsGen)
     model.if_enable_trfsGen = True
     model = model.eval()
 
     #get mtrf prediction
+    nExtTimeLag = trfsGen.limitOfShift_idx
     if ifFitMTRFWithExtTimeLag:
-        trf.times = trf.times[7:-7]
-        trf.weights = trf.weights[:,7:-7,:]
+        trf.times = trf.times[nExtTimeLag:-nExtTimeLag]
+        trf.weights = trf.weights[:,nExtTimeLag:-nExtTimeLag,:]
     print(trf.weights.shape)
     predMTRF = trf.predict(stimulus)
     predMTRF = np.stack(predMTRF, axis = 0)

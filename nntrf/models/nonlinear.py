@@ -307,6 +307,11 @@ class FuncBasisTRF(torch.nn.Module):
     # def corrected_time_embedding(self, t):
         # return t + + self.timeshiftLimit_idx
 
+    def TRF(self):
+        # (outDim, inDim, nWin)
+        #(nBatch, 1, 1, nWin, nSeq)
+        return self.forward(1, 0, 1)[0,...,0]#.detach().cpu().numpy()      
+
     @property
     def inDim(self):
         return self.TRFs.shape[1]
@@ -321,9 +326,6 @@ class FuncBasisTRF(torch.nn.Module):
     
     @property
     def nBasis(self):
-        raise NotImplementedError
-    
-    def TRF(self):
         raise NotImplementedError
     
     def vis(self):
@@ -501,16 +503,13 @@ class GaussianBasisTRF(FuncBasisTRF):
                     TRF = TRFs[j, i, :]
                     assert np.around(pearsonr(curFTRF, TRF)[0]) >= 0.99
 
-    def TRF(self):
-        # (outDim, inDim, nWin)
-
-        #(nBatch, 1, 1, nWin, nSeq)
-        return self.forward(1, 0, 1)[0,...,0]#.detach().cpu().numpy()      
-
     def vis(self):
         if plt is None:
             raise ValueError('matplotlib should be installed')
-        FTRFs = self.TRF().detach().cpu()
+        with torch.no_grad():
+            FTRFs = self.vec_gauss_sum(
+                self.time_embedding_ext,
+            ).cpu()[0, ..., 0]
         nInChan = self.inDim
         nOutChan = self.outDim
         fig, axs = plt.subplots(2)
@@ -695,19 +694,15 @@ class FourierBasisTRF(FuncBasisTRF):
         out = a * self.vec_fourier_sum(self.nBasis,self.T,x,coefs)
         return out
         
-    def TRF(self):
-        FTRFs = self.vec_fourier_sum(
-            self.nBasis,
-            self.T,
-            self.time_embedding,
-            self.coefs
-        )[0][...,0]
-        return FTRFs
-    
     def vis(self):
         if plt is None:
             raise ValueError('matplotlib should be installed')
-        FTRFs = self.TRF()
+        FTRFs = self.vec_fourier_sum(
+            self.nBasis,
+            self.T,
+            self.time_embedding_ext,
+            self.coefs
+        )[0, ..., 0]
         nInChan = self.inDim
         nOutChan = self.outDim
         fig, axs = plt.subplots(2)
