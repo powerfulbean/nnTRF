@@ -400,7 +400,9 @@ class GaussianBasisTRF(FuncBasisTRF):
         ### Fixed Values
         # timeEmbed = torch.arange(nWin) 
         # self.register_buffer('timeEmbed', timeEmbed)
-        mu = torch.linspace(0, nWin, nBasis + 2)
+        time_embedding_ext = self.time_embedding_ext.squeeze()
+        tmin_idx_ext, tmax_idx_ext = time_embedding_ext[0], time_embedding_ext[-1]
+        mu = torch.linspace(tmin_idx_ext.item(), tmax_idx_ext.item(), nBasis + 2)
         self.register_buffer('mu', mu[1:-1])
         sigmaMin = torch.tensor(sigmaMin)
         self.register_buffer('sigmaMin', sigmaMin)
