@@ -301,7 +301,7 @@ class FuncBasisTRF(torch.nn.Module):
         self.time_embedding_ext = self.get_time_embedding(
             tmin_idx-timeshiftLimit_idx, tmax_idx+timeshiftLimit_idx, device) 
         nWin = self.time_embedding_ext.shape[-2]
-        TRFs = torch.empty((outDim, inDim, nWin),device=device)
+        TRFs = torch.zeros((outDim, inDim, nWin),device=device)
         self.register_buffer('TRFs',TRFs)
 
     # def corrected_time_embedding(self, t):
@@ -341,6 +341,10 @@ class FuncBasisTRF(torch.nn.Module):
         #(1, 1, 1, nWin, 1) 
         return torch.arange(tmin_idx,tmax_idx+1, device=device)\
             .view(1,1,1,-1,1)
+    
+    @property
+    def timelag_idx(self,):
+        return self.time_embedding.detach().cpu().squeeze()
 
 def build_gaussian_response(x, mu, sigma):
     # x: (nBatch, 1, 1, nWin, nSeq)
@@ -376,11 +380,12 @@ class GaussianBasisTRF(FuncBasisTRF):
         sigmaMin = 6.4,
         sigmaMax = 6.4,
         ifSumInDim = False,
-        device = 'cpu'
+        device = 'cpu',
+        mu = None,
+        sigma = None
     ):
         super().__init__(inDim, outDim, tmin_idx, tmax_idx, timeshiftLimit_idx, device)
         nWin = self.nWin
-        print(nWin)
         ### Fittable Parameters
         ## out projection init
         coefs = torch.ones((nBasis + 1, outDim, inDim))
@@ -393,7 +398,11 @@ class GaussianBasisTRF(FuncBasisTRF):
         # self.bias = torch.nn.Parameter(torch.ones(outDim))
         # torch.nn.init.uniform_(self.bias, a = lower, b = upper)
         ## sigma init
-        sigma = torch.ones(nBasis, outDim, inDim) * sigmaMin
+        if sigma is not None:
+            assert len(sigma) == nBasis
+            sigma = torch.tensor(sigma)
+        else:
+            sigma = torch.ones(nBasis, outDim, inDim) * sigmaMin
         self.sigma = torch.nn.Parameter(sigma)
         # torch.nn.init.uniform_(self.sigma, a = lower, b = upper)
 
@@ -402,8 +411,13 @@ class GaussianBasisTRF(FuncBasisTRF):
         # self.register_buffer('timeEmbed', timeEmbed)
         time_embedding_ext = self.time_embedding_ext.squeeze()
         tmin_idx_ext, tmax_idx_ext = time_embedding_ext[0], time_embedding_ext[-1]
-        mu = torch.linspace(tmin_idx_ext.item(), tmax_idx_ext.item(), nBasis + 2)
-        self.register_buffer('mu', mu[1:-1])
+        if mu is not None:
+            assert len(mu) == nBasis
+            mu = torch.tensor(mu)
+        else:
+            mu = torch.linspace(tmin_idx_ext.item(), tmax_idx_ext.item(), nBasis + 2)[1:-1]
+        self.register_buffer('mu', mu)
+
         sigmaMin = torch.tensor(sigmaMin)
         self.register_buffer('sigmaMin', sigmaMin)
         sigmaMax = torch.tensor(sigmaMax)
@@ -417,6 +431,7 @@ class GaussianBasisTRF(FuncBasisTRF):
         sigma = torch.minimum(sigma, self.sigmaMax)
         # print(sigma)
         # (nBatch, nBasis, outDim, inDim, nWin, nSeq)
+        # print(self.mu, sigma)
         gaussResps = build_gaussian_response(
             x, 
             self.mu, 
@@ -505,7 +520,7 @@ class GaussianBasisTRF(FuncBasisTRF):
                     TRF = TRFs[j, i, :]
                     assert np.around(pearsonr(curFTRF, TRF)[0]) >= 0.99
 
-    def vis(self):
+    def vis(self, fs = None):
         if plt is None:
             raise ValueError('matplotlib should be installed')
         with torch.no_grad():
@@ -516,14 +531,18 @@ class GaussianBasisTRF(FuncBasisTRF):
         nOutChan = self.outDim
         fig, axs = plt.subplots(2)
         fig.suptitle('top: original TRF, bottom: reconstructed TRF')
+        if fs is None:
+            timelag = self.timelag_idx
+        else:
+            timelag = self.timelag_idx.numpy() / fs
         for j in range(nOutChan):
             for i in range(nInChan):
                 TRF = self.TRFs[j,i,:].cpu()
                 FTRF = FTRFs[j,i,:].cpu()
                 # print(pearsonr(FTRF, TRF)[0])
-                axs[0].plot(TRF)
+                axs[0].plot(timelag, TRF)
                 # if j == 0:
-                axs[1].plot(FTRF)
+                axs[1].plot(timelag, FTRF)
         return fig
 
 
