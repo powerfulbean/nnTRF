@@ -21,6 +21,7 @@ class TwoMixedTRF(torch.nn.Module):
             feats = []
             n_dict_feat = 0
             for feat_key in feats_key:
+                # print(feat_dict.keys())
                 feat = feat_dict[feat_key]
                 if isinstance(feat, dict):
                     feats.append(feat)
@@ -53,15 +54,10 @@ class TwoMixedTRF(torch.nn.Module):
             
 
 
-        minLen = min([p.shape[-1] for p in predList] + [y.shape[-1]])
+        minLen = min([p.shape[-1] for p in pred_list] + [y.shape[-1]])
             
-        predList = [p[...,:minLen] for p in predList]
+        pred_list = [p[...,:minLen] for p in pred_list]
         cropedY = y[:,:,:minLen]
-
-        if len(predList) == 2:
-            pred = predList[0] + predList[1]
-        else:
-            pred = predList[0]
-        pred = sum(predList)
+        pred = sum(pred_list)
         # stop
         return pred,cropedY

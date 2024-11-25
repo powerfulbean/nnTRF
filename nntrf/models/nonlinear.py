@@ -773,19 +773,17 @@ class FuncTRFsGen(torch.nn.Module):
         nBasis = 21, 
         mode = '',
         transformer = None,
-        auxInDim = 0,
         device = 'cpu'
     ):
         super().__init__()
         assert mode.replace('+-','') in ['','a','b','a,b','a,b,c']
-        self.auxInDim = auxInDim
         self.fs = fs
         self.lagIdxs = msec2Idxs([tmin_ms,tmax_ms],fs)
         self.lagIdxs_ts = torch.Tensor(self.lagIdxs).float().to(device)
         self.lagTimes = Idxs2msec(self.lagIdxs,fs)
         nWin = len(self.lagTimes)
         self.mode = mode
-        self.transformer = transformer
+        self.transformer:torch.nn.Module = transformer
         self.nMiddleParam = len(mode.split(','))
         self.device = device
         self.basisTRF:FuncBasisTRF = basisTRFNameMap[basisTRFName](
@@ -800,10 +798,14 @@ class FuncTRFsGen(torch.nn.Module):
 
 
         if transformer is None:
-            inDim, outDim, device = self.expectedInOutDimOfFeatExtracter()
-            self.transformer = CausalConv(inDim, outDim, 2).to(device)
+            transInDim, transOutDim, device = self.default_transformer_param()
+            self.transformer:torch.nn.Module = CausalConv(transInDim, transOutDim, 2).to(device)
 
         self.limitOfShift_idx = torch.tensor(limitOfShift_idx)
+
+    @classmethod
+    def parse_trans_params(cls,mode):
+        return mode.split(',')
 
     @property
     def tmin_ms(self):
@@ -843,10 +845,10 @@ class FuncTRFsGen(torch.nn.Module):
         timelags = Idxs2msec(extLag_idx, self.fs)
         return timelags[0], timelags[-1]
 
-    def expectedInOutDimOfFeatExtracter(self):
-        inDim = self.inDim + self.auxInDim
+    def get_default_transformer_param(self):
+        inDim = self.inDim
         device = self.device
-        outDim = self.inDim * self.nMiddleParam
+        outDim = self.nMiddleParam
         return inDim, outDim, device
 
     def fitFuncTRF(self, w):
@@ -992,7 +994,7 @@ class ASTRF(torch.nn.Module):
             outDim,
             ifAddBiasInForward=False
         ).to(device)
-        self.trfsGen:TRFsGen = trfsGen if trfsGen is None else trfsGen.to(device)
+        self.trfsGen:FuncTRFsGen = trfsGen if trfsGen is None else trfsGen.to(device)
         self.fs = fs
 
         self.bias = None
@@ -1040,8 +1042,9 @@ class ASTRF(torch.nn.Module):
         torch.nn.init.uniform_(self.bias, -bound, bound)
 
     def get_params_for_train(self):
-        raise NotImplementedError()
-        return [i for i in self.oNonLinear.parameters()] + [self.bias]
+        return [i for i in self.trfsGen.transformer.parameters()] + [self.bias]
+        # raise NotImplementedError()
+        
 
     def set_linear_weights(self, w, b):
         #w: (nInChan, nLag, nOutChan)
