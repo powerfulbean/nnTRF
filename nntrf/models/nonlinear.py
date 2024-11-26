@@ -301,7 +301,7 @@ class FuncBasisTRF(torch.nn.Module):
         self.time_embedding_ext = self.get_time_embedding(
             tmin_idx-timeshiftLimit_idx, tmax_idx+timeshiftLimit_idx, device) 
         nWin = self.time_embedding_ext.shape[-2]
-        TRFs = torch.zeros((outDim, inDim, nWin),device=device)
+        TRFs = torch.empty((outDim, inDim, nWin),device=device)
         self.register_buffer('TRFs',TRFs)
 
     # def corrected_time_embedding(self, t):
@@ -588,7 +588,7 @@ class FourierBasisTRF(FuncBasisTRF):
         self.TRFs[:,:,:] = TRFs.to(self.device)[:,:,:]
         fd_basis_s = []
         # grid_points = list(range(self.nWin))
-        grid_points = self.time_embedding_ext.squeeze().numpy()
+        grid_points = self.time_embedding_ext.squeeze().cpu().numpy()
         for j in range(self.outDim):
             for i in range(self.inDim):
                 TRF = TRFs[j, i, :]
@@ -994,6 +994,8 @@ class ASTRF(torch.nn.Module):
             outDim,
             ifAddBiasInForward=False
         ).to(device)
+        # if callable(trfsGen):
+        #     trfsGen = trfsGen()
         self.trfsGen:FuncTRFsGen = trfsGen if trfsGen is None else trfsGen.to(device)
         self.fs = fs
 
@@ -1027,7 +1029,7 @@ class ASTRF(torch.nn.Module):
         return self.lagTimes[-1]
     
     def init_nonLinTRFs_bias(self, inDim, nWin, outDim, device):
-        self.bias = torch.nn.Parameter(torch.ones(outDim, device = device))
+        self.bias = torch.nn.Parameter(torch.ones(outDim))
         fan_in = inDim * nWin
         bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
         torch.nn.init.uniform_(self.bias, -bound, bound)
