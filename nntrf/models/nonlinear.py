@@ -56,6 +56,71 @@ class CausalConv(torch.nn.Module):
         x = self.conv(x)
         return x
 
+class CausalConvProj(torch.nn.Module):
+
+    def __init__(self,inDim,outDim, nKernel,dilation = 1):
+        super().__init__()
+        outDim1,outDim2 = outDim
+        self.nKernel = nKernel
+        self.dilation = dilation
+        self.conv = torch.nn.Conv1d(
+            inDim, 
+            outDim1, 
+            nKernel, 
+            dilation = dilation
+        )
+        self.conv2 = torch.nn.Conv1d(
+            outDim1, 
+            outDim2 * outDim1, 
+            1,
+            groups = outDim1
+        )
+    
+    def forward(self,x):
+        '''
+        x: (nBatch, nChan, nSeq)
+        '''
+        # padding left
+        x = torch.nn.functional.pad(x,(( self.dilation * (self.nKernel-1) ,0)))
+
+        #(nBatch, nOutChan, nSeq)
+        x = self.conv(x)
+        x = self.conv2(x)
+        return x
+
+class CausalConvProjNoBias(torch.nn.Module):
+
+    def __init__(self,inDim,outDim, nKernel,dilation = 1):
+        super().__init__()
+        outDim1,outDim2 = outDim
+        self.nKernel = nKernel
+        self.dilation = dilation
+        self.conv = torch.nn.Conv1d(
+            inDim, 
+            outDim1, 
+            nKernel, 
+            dilation = dilation
+        )
+        self.conv2 = torch.nn.Conv1d(
+            outDim1, 
+            outDim2 * outDim1, 
+            1,
+            groups = outDim1,
+            bias = False
+        )
+    
+    def forward(self,x):
+        '''
+        x: (nBatch, nChan, nSeq)
+        '''
+        # padding left
+        x = torch.nn.functional.pad(x,(( self.dilation * (self.nKernel-1) ,0)))
+
+        #(nBatch, nOutChan, nSeq)
+        x = self.conv(x)
+        x = self.conv2(x)
+        return x
+
 class TRFAligner(torch.nn.Module):
     
     def __init__(self,device):
@@ -659,6 +724,7 @@ class FourierBasisTRF(FuncBasisTRF):
 
         #(nBatch, 1, 1, nWin, nSeq, 1)
         t = t[..., None]
+        # print(t.shape)
         const0 = self.phi0(T)
         maxN = nBasis // 2
         # (maxN)
@@ -680,7 +746,7 @@ class FourierBasisTRF(FuncBasisTRF):
         #(nOutChan, nInChan, 1, 1, nBasis)
         coefs = coefs[:, :, None, None, :]
         nBasis = nBasis
-
+        # print(constN.shape, coefs.shape)
         '''
         #expr for saving memory usage
         memAvai,_ = torch.cuda.mem_get_info()
@@ -700,10 +766,12 @@ class FourierBasisTRF(FuncBasisTRF):
         return out
     
     def forward(self,a, b, c):
-        # a,b,c (nBatch, 1, 1, 1, nSeq)
+        # a,b,c in most strict case (nBatch, 1, 1, 1, nSeq)
+        # loosly: a,b,c can be (nBatch, nOut, nIn, nWin, nSeq)
+
         #self.time_embedding #(1, 1, 1, nWin, 1) 
         
-        # x: (nBatch, 1, 1, nWin, nSeq)
+        # x: (nBatch, 1, 1, nWin, nSeq) 
         nSeq = self.time_embedding
         x = c * (nSeq - b)
         # x = self.corrected_time_embedding(x)
@@ -773,7 +841,8 @@ class FuncTRFsGen(torch.nn.Module):
         nBasis = 21, 
         mode = '',
         transformer = None,
-        device = 'cpu'
+        device = 'cpu',
+        # if_trans_per_outChan = False
     ):
         super().__init__()
         assert mode.replace('+-','') in ['','a','b','a,b','a,b,c']
@@ -784,7 +853,7 @@ class FuncTRFsGen(torch.nn.Module):
         nWin = len(self.lagTimes)
         self.mode = mode
         self.transformer:torch.nn.Module = transformer
-        self.nMiddleParam = len(mode.split(','))
+        self.n_transform_params = len(mode.split(','))
         self.device = device
         self.basisTRF:FuncBasisTRF = basisTRFNameMap[basisTRFName](
             inDim, 
@@ -795,7 +864,7 @@ class FuncTRFsGen(torch.nn.Module):
             timeshiftLimit_idx = limitOfShift_idx, 
             device=device
         )
-
+        # self.if_trans_per_outChan = if_trans_per_outChan
 
         if transformer is None:
             transInDim, transOutDim, device = self.default_transformer_param()
@@ -848,7 +917,7 @@ class FuncTRFsGen(torch.nn.Module):
     def get_default_transformer_param(self):
         inDim = self.inDim
         device = self.device
-        outDim = self.nMiddleParam
+        outDim = self.n_transform_params
         return inDim, outDim, device
 
     def fitFuncTRF(self, w):
@@ -858,14 +927,14 @@ class FuncTRFsGen(torch.nn.Module):
         return self
     
     def pickParam(self,paramSeqs,idx):
-        #paramSeqs: (nBatch, nMiddleParam, 1, 1, nSeq)
-        return paramSeqs[:, idx:idx+1, ...]
+        #paramSeqs: (nBatch, nMiddleParam, nOut/1, 1, 1, nSeq)
+        return paramSeqs[:, idx, ...]
     
     
     def getTransformParams(self, x, startIdx = None):
         paramSeqs = self.transformer(x) #(nBatch, nMiddleParam, nSeq)
+        nBatch, nMiddleParam, nSeq = paramSeqs.shape
         if startIdx is not None:
-            nBatch, nMiddleParam, _ = paramSeqs.shape
             idxBatch = torch.arange(nBatch)
             idxMiddleParam = torch.arange(nMiddleParam)
             idxMiddleParam = idxMiddleParam[:, None]
@@ -873,20 +942,25 @@ class FuncTRFsGen(torch.nn.Module):
             idxBatch = idxBatch[:, None, None]
             paramSeqs = paramSeqs[idxBatch, idxMiddleParam, startIdx]
         
-        #(nBatch, nMiddleParam, 1, 1, nSeq)
-        paramSeqs = paramSeqs[:, :, None, None, :]
+        #(nBatch, n_transform_params, 1, 1, nSeq), this is the most strict case
+        #however, it can also be (nBatch, n_transform_params, nOut, 1, nSeq) 
+        #  for different transformation for different channel
+            
+        paramSeqs = paramSeqs.view(nBatch, self.n_transform_params, -1, 1, 1, nSeq) #[:, :, None, None, :]
+        if paramSeqs.shape[2] != 1:
+            assert paramSeqs.shape[2] == self.outDim
         midParamList = self.mode.split(',')
         if midParamList == ['']:
             midParamList = []
         nParamMiss = 0
         if 'a' in midParamList:
             aIdx = midParamList.index('a')
-            #(nBatch, 1, 1, 1, nSeq)
+            #(nBatch, 1, nOut/1, 1, nSeq)
             aSeq = self.pickParam(paramSeqs, aIdx) 
             aSeq = torch.abs(aSeq)
         elif '+-a' in midParamList:
             aIdx = midParamList.index('+-a')
-            #(nBatch, 1, 1, 1, nSeq)
+            #(nBatch, 1, nOut/1, 1, nSeq)
             aSeq = self.pickParam(paramSeqs, aIdx)
         else:
             nParamMiss += 1
@@ -924,13 +998,14 @@ class FuncTRFsGen(torch.nn.Module):
         x: (nBatch, inDim, nSeq)
         output: TRFs (nBatch, outDim, nWin, nSeq)
         '''
-        #(nBatch, 1, 1, 1, nSeq)
+        #(nBatch, nOut/1, 1, 1, nSeq)
         aSeq, bSeq, cSeq = self.getTransformParams(x, featOnsetIdx)
         #(1, 1, 1, nWin, 1) 
         # nSeq = self.lagIdxs_ts[None, None, None, :, None] + self.limitOfShift_idx 
         # print(aSeq, bSeq, cSeq)x
         #(nBatch, outDim, inDim, nWin, nSeq)
         # nonLinTRFs = aSeq * self.basisTRF( cSeq * ( nSeq -  bSeq) ) 
+        # print(aSeq.shape, bSeq.shape)
         nonLinTRFs = self.basisTRF(aSeq, bSeq, cSeq)
         # print(torch.cuda.memory_allocated()/1024/1024)
 
