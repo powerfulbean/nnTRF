@@ -121,6 +121,42 @@ class CausalConvProjNoBias(torch.nn.Module):
         x = self.conv2(x)
         return x
 
+class CausalConvPositiveScale(torch.nn.Module):
+
+    def __init__(self,inDim,outDim, nKernel,dilation = 1):
+        super().__init__()
+        outDim1,outDim2 = outDim
+        self.nKernel = nKernel
+        self.dilation = dilation
+        self.conv = torch.nn.Conv1d(
+            inDim, 
+            outDim1, 
+            nKernel, 
+            dilation = dilation
+        )
+        self.scale = torch.nn.Parameter(
+            torch.zeros(
+                outDim1, outDim2, 1
+            )
+        )
+
+        torch.nn.init.xavier_uniform_(self.scale)
+    
+    def forward(self,x):
+        '''
+        x: (nBatch, nChan, nSeq)
+        '''
+        # padding left
+        x = torch.nn.functional.pad(x,(( self.dilation * (self.nKernel-1) ,0)))
+
+        #(nBatch, nOutChan, nSeq)
+        x = self.conv(x)
+        nBatch, outDim1, nSeq = x.shape
+        x = x.view(nBatch, outDim1, 1, nSeq)
+        x = x * self.scale
+        x = x.view(nBatch, -1, nSeq)
+        return x
+
 class TRFAligner(torch.nn.Module):
     
     def __init__(self,device):
