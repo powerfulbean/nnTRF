@@ -135,7 +135,7 @@ class CausalConvPositiveScale(torch.nn.Module):
             dilation = dilation
         )
         self.scale = torch.nn.Parameter(
-            torch.zeros(
+            torch.empty(
                 outDim1, outDim2, 1
             )
         )
@@ -153,7 +153,7 @@ class CausalConvPositiveScale(torch.nn.Module):
         x = self.conv(x)
         nBatch, outDim1, nSeq = x.shape
         x = x.view(nBatch, outDim1, 1, nSeq)
-        x = x * self.scale
+        x = x * torch.sigmoid(self.scale)
         x = x.view(nBatch, -1, nSeq)
         return x
 
