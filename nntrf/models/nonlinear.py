@@ -1232,15 +1232,20 @@ class FuncTRFsGen(torch.nn.Module):
         self.transformer:torch.nn.Module = transformer
         self.n_transform_params = len(mode.split(','))
         self.device = device
-        self.basisTRF:FuncBasisTRF = basisTRFNameMap[basisTRFName](
-            inDim, 
-            outDim, 
-            self.lagIdxs[0],
-            self.lagIdxs[-1], 
-            nBasis,
-            timeshiftLimit_idx = limitOfShift_idx, 
-            device=device
-        )
+        if isinstance(basisTRFName, str):
+            self.basisTRF:FuncBasisTRF = basisTRFNameMap[basisTRFName](
+                inDim, 
+                outDim, 
+                self.lagIdxs[0],
+                self.lagIdxs[-1], 
+                nBasis,
+                timeshiftLimit_idx = limitOfShift_idx, 
+                device=device
+            )
+        elif isinstance(basisTRFName, torch.nn.Module):
+            self.basisTRF:FuncBasisTRF = basisTRFName
+        else:
+            raise ValueError()
         # self.if_trans_per_outChan = if_trans_per_outChan
 
         if transformer is None:
