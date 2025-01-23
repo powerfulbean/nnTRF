@@ -56,6 +56,222 @@ class CausalConv(torch.nn.Module):
         x = self.conv(x)
         return x
 
+class CausalConvSoftplus(CausalConv):
+    
+    def forward(self,x):
+        '''
+        x: (nBatch, nChan, nSeq)
+        '''
+        # padding left
+        x = torch.nn.functional.pad(x,(( self.dilation * (self.nKernel-1) ,0)))
+
+        #(nBatch, nOutChan, nSeq)
+        x = self.conv(x)
+        x = torch.nn.functional.softplus(x)
+        return x
+
+class CausalConvSoftplus2(CausalConv):
+    
+    def forward(self,x):
+        '''
+        x: (nBatch, nChan, nSeq)
+        '''
+        # padding left
+        x = torch.nn.functional.pad(x,(( self.dilation * (self.nKernel-1) ,0)))
+
+        #(nBatch, nOutChan, nSeq)
+        x = self.conv(x)
+        x = torch.nn.functional.softplus(x, 20)
+        return x
+
+## experiment module start
+
+class CausalConvBN(torch.nn.Module):
+
+    def __init__(self,inDim,outDim,nKernel,dilation = 1):
+        super().__init__()
+        self.nKernel = nKernel
+        self.dilation = dilation
+        self.conv = torch.nn.Conv1d(
+            inDim, 
+            outDim, 
+            nKernel, 
+            dilation = dilation
+        )
+        self.bn = torch.nn.BatchNorm1d(
+            inDim
+        )
+    
+    def forward(self,x):
+        '''
+        x: (nBatch, nChan, nSeq)
+        '''
+        # padding left
+        x = self.bn(x)
+        x = torch.nn.functional.pad(x,(( self.dilation * (self.nKernel-1) ,0)))
+
+        #(nBatch, nOutChan, nSeq)
+        x = self.conv(x)
+        return x
+
+class CausalConvBNSoftplus2(CausalConvBN):
+    
+    def forward(self,x):
+        '''
+        x: (nBatch, nChan, nSeq)
+        '''
+        # padding left
+        x = self.bn(x)
+        x = torch.nn.functional.pad(x,(( self.dilation * (self.nKernel-1) ,0)))
+
+        #(nBatch, nOutChan, nSeq)
+        x = self.conv(x)
+        x = torch.nn.functional.softplus(x, 20)
+        return x
+
+class CausalSoftplusSharedConv(torch.nn.Module):
+
+    def __init__(self,inDim,outDim,nKernel,dilation = 1):
+        super().__init__()
+        self.nKernel = nKernel
+        self.dilation = dilation
+        self.conv = torch.nn.Conv1d(
+            inDim, 
+            1, 
+            nKernel, 
+            dilation = dilation
+        )
+        self.proj_w = torch.nn.Parameter(
+            torch.empty(
+                outDim, 1, 1
+            )
+        )
+        torch.nn.init.kaiming_uniform_(self.proj_w, a=math.sqrt(5))
+        
+    
+    def forward(self,x):
+        '''
+        x: (nBatch, nChan, nSeq)
+        '''
+        # padding left
+        x = torch.nn.functional.pad(x,(( self.dilation * (self.nKernel-1) ,0)))
+
+        #(nBatch, nOutChan, nSeq)
+        x = self.conv(x)
+        proj_w = torch.nn.functional.softplus(self.proj_w)
+        x = torch.nn.functional.conv1d(x, proj_w)
+        return x
+
+class CausalSharedConv(torch.nn.Module):
+
+    def __init__(self,inDim,outDim,nKernel,dilation = 1):
+        super().__init__()
+        self.nKernel = nKernel
+        self.dilation = dilation
+        self.conv = torch.nn.Conv1d(
+            inDim, 
+            1, 
+            nKernel, 
+            dilation = dilation
+        )
+        self.proj = torch.nn.Conv1d(
+            1,
+            outDim,
+            1
+        )
+        
+    
+    def forward(self,x):
+        '''
+        x: (nBatch, nChan, nSeq)
+        '''
+        # padding left
+        x = torch.nn.functional.pad(x,(( self.dilation * (self.nKernel-1) ,0)))
+
+        #(nBatch, nOutChan, nSeq)
+        x = self.conv(x)
+        x = self.proj(x)
+        return x
+
+class CausalSharedConvSoftplus(CausalSharedConv):
+    
+    def forward(self,x):
+        '''
+        x: (nBatch, nChan, nSeq)
+        '''
+        # padding left
+        x = torch.nn.functional.pad(x,(( self.dilation * (self.nKernel-1) ,0)))
+
+        #(nBatch, nOutChan, nSeq)
+        x = self.conv(x)
+        x = self.proj(x)
+        x = torch.nn.functional.softplus(x)
+        return x
+
+class CausalSharedConvSoftplus2(CausalSharedConv):
+    
+    def forward(self,x):
+        '''
+        x: (nBatch, nChan, nSeq)
+        '''
+        # padding left
+        x = torch.nn.functional.pad(x,(( self.dilation * (self.nKernel-1) ,0)))
+
+        #(nBatch, nOutChan, nSeq)
+        x = self.conv(x)
+        x = self.proj(x)
+        x = torch.nn.functional.softplus(x, 20)
+        return x
+
+class CausalSharedConvReLU(CausalSharedConv):
+    
+    def forward(self,x):
+        '''
+        x: (nBatch, nChan, nSeq)
+        '''
+        # padding left
+        x = torch.nn.functional.pad(x,(( self.dilation * (self.nKernel-1) ,0)))
+
+        #(nBatch, nOutChan, nSeq)
+        x = self.conv(x)
+        x = self.proj(x)
+        x = torch.relu(x)
+        return x
+
+class CausalSharedConvBN(torch.nn.Module):
+
+    def __init__(self,inDim,outDim,nKernel,dilation = 1):
+        super().__init__()
+        self.nKernel = nKernel
+        self.dilation = dilation
+        self.conv = torch.nn.Conv1d(
+            inDim, 
+            1, 
+            nKernel, 
+            dilation = dilation
+        )
+        self.proj = torch.nn.Conv1d(
+            1,
+            outDim,
+            1
+        )
+        self.bn = torch.nn.BatchNorm1d(
+            inDim
+        )
+    
+    def forward(self,x):
+        '''
+        x: (nBatch, nChan, nSeq)
+        '''
+        # padding left
+        x = self.bn(x)
+        x = torch.nn.functional.pad(x,(( self.dilation * (self.nKernel-1) ,0)))
+
+        #(nBatch, nOutChan, nSeq)
+        x = self.conv(x)
+        x = self.proj(x)
+        return x
+
 class CausalConvProj(torch.nn.Module):
 
     def __init__(self,inDim,outDim, nKernel,dilation = 1):
@@ -121,6 +337,89 @@ class CausalConvProjNoBias(torch.nn.Module):
         x = self.conv2(x)
         return x
 
+class CausalConvProjNoBiasPositive(torch.nn.Module):
+
+    def __init__(self,inDim,outDim, nKernel,dilation = 1):
+        super().__init__()
+        outDim1,outDim2 = outDim
+        self.nKernel = nKernel
+        self.dilation = dilation
+        self.conv = torch.nn.Conv1d(
+            inDim, 
+            outDim1, 
+            nKernel, 
+            dilation = dilation
+        )
+
+        self.conv2_w = torch.nn.Parameter(
+            torch.empty(
+                outDim2 * outDim1, 1, 1
+            )
+        )
+        torch.nn.init.kaiming_uniform_(self.conv2_w, a=math.sqrt(5))
+    
+    def forward(self,x):
+        '''
+        x: (nBatch, nChan, nSeq)
+        '''
+        # padding left
+        x = torch.nn.functional.pad(x,(( self.dilation * (self.nKernel-1) ,0)))
+
+        #(nBatch, nOutChan, nSeq)
+        x = self.conv(x)
+        outDim1, _, _ = self.conv.weight.shape
+        conv2_w = torch.abs(self.conv2_w)
+        x = torch.nn.functional.conv1d(x, conv2_w, groups = outDim1)
+        return x
+
+class CausalConvProjNoBiasSigmoid(CausalConvProjNoBiasPositive):
+
+    def forward(self,x):
+        '''
+        x: (nBatch, nChan, nSeq)
+        '''
+        # padding left
+        x = torch.nn.functional.pad(x,(( self.dilation * (self.nKernel-1) ,0)))
+
+        #(nBatch, nOutChan, nSeq)
+        x = self.conv(x)
+        outDim1, _, _ = self.conv.weight.shape
+        conv2_w = torch.sigmoid(self.conv2_w)
+        x = torch.nn.functional.conv1d(x, conv2_w, groups = outDim1)
+        return x
+    
+class CausalConvProjNoBiasSoftplus(CausalConvProjNoBiasPositive):
+
+    def forward(self,x):
+        '''
+        x: (nBatch, nChan, nSeq)
+        '''
+        # padding left
+        x = torch.nn.functional.pad(x,(( self.dilation * (self.nKernel-1) ,0)))
+
+        #(nBatch, nOutChan, nSeq)
+        x = self.conv(x)
+        outDim1, _, _ = self.conv.weight.shape
+        conv2_w = torch.nn.functional.softplus(self.conv2_w)
+        x = torch.nn.functional.conv1d(x, conv2_w, groups = outDim1)
+        return x
+
+class CausalConvProjNoBiasSoftplus2(CausalConvProjNoBiasPositive):
+
+    def forward(self,x):
+        '''
+        x: (nBatch, nChan, nSeq)
+        '''
+        # padding left
+        x = torch.nn.functional.pad(x,(( self.dilation * (self.nKernel-1) ,0)))
+
+        #(nBatch, nOutChan, nSeq)
+        x = self.conv(x)
+        outDim1, _, _ = self.conv.weight.shape
+        conv2_w = torch.nn.functional.softplus(self.conv2_w, 20)
+        x = torch.nn.functional.conv1d(x, conv2_w, groups = outDim1)
+        return x
+
 class CausalConvPositiveScale(torch.nn.Module):
 
     def __init__(self,inDim,outDim, nKernel,dilation = 1):
@@ -157,6 +456,43 @@ class CausalConvPositiveScale(torch.nn.Module):
         x = x.view(nBatch, -1, nSeq)
         return x
 
+class CausalConvPositiveScale2(CausalConvPositiveScale):
+
+    def forward(self,x):
+        '''
+        x: (nBatch, nChan, nSeq)
+        '''
+        # padding left
+        x = torch.nn.functional.pad(x,(( self.dilation * (self.nKernel-1) ,0)))
+
+        #(nBatch, nOutChan, nSeq)
+        x = self.conv(x)
+        nBatch, outDim1, nSeq = x.shape
+        x = x.view(nBatch, outDim1, 1, nSeq)
+        x = x * torch.abs(self.scale)
+        x = x.view(nBatch, -1, nSeq)
+        return x
+
+class CausalConvScale(CausalConvPositiveScale):
+
+    def forward(self,x):
+        '''
+        x: (nBatch, nChan, nSeq)
+        '''
+        # padding left
+        x = torch.nn.functional.pad(x,(( self.dilation * (self.nKernel-1) ,0)))
+
+        #(nBatch, nOutChan, nSeq)
+        x = self.conv(x)
+        nBatch, outDim1, nSeq = x.shape
+        x = x.view(nBatch, outDim1, 1, nSeq)
+        x = x * self.scale
+        x = x.view(nBatch, -1, nSeq)
+        return x
+
+
+## experiment module end
+    
 class TRFAligner(torch.nn.Module):
     
     def __init__(self,device):
@@ -447,6 +783,11 @@ class FuncBasisTRF(torch.nn.Module):
     def timelag_idx(self,):
         return self.time_embedding.detach().cpu().squeeze()
 
+    @property
+    def timelag_idx_ext(self,):
+        return self.time_embedding_ext.detach().cpu().squeeze()
+
+
 def build_gaussian_response(x, mu, sigma):
     # x: (nBatch, 1, 1, nWin, nSeq)
     # mu: (nBasis)
@@ -633,9 +974,9 @@ class GaussianBasisTRF(FuncBasisTRF):
         fig, axs = plt.subplots(2)
         fig.suptitle('top: original TRF, bottom: reconstructed TRF')
         if fs is None:
-            timelag = self.timelag_idx
+            timelag = self.timelag_idx_ext
         else:
-            timelag = self.timelag_idx.numpy() / fs
+            timelag = self.timelag_idx_ext.numpy() / fs
         for j in range(nOutChan):
             for i in range(nInChan):
                 TRF = self.TRFs[j,i,:].cpu()
@@ -903,7 +1244,7 @@ class FuncTRFsGen(torch.nn.Module):
         # self.if_trans_per_outChan = if_trans_per_outChan
 
         if transformer is None:
-            transInDim, transOutDim, device = self.default_transformer_param()
+            transInDim, transOutDim, device = self.get_default_transformer_param()
             self.transformer:torch.nn.Module = CausalConv(transInDim, transOutDim, 2).to(device)
 
         self.limitOfShift_idx = torch.tensor(limitOfShift_idx)
