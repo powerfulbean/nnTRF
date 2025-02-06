@@ -904,6 +904,7 @@ class GaussianBasisTRF(FuncBasisTRF):
         # (nBatch, nBasis+1, outDim, inDim, nWin, nSeq)
         w_gauss_resps_1 = coefs_1 * gaussResps
         if self.include_constant_term:
+            # print('include constant term')
             w_gauss_resps = w_gauss_resps_1.sum(-5) +  coefs_2
         else:
             w_gauss_resps = w_gauss_resps_1.sum(-5)
@@ -946,11 +947,12 @@ class GaussianBasisTRF(FuncBasisTRF):
         sigma = self.sigma
         # print(sigma)
         # (nBasis, outDim, inDim, nWin)
-        gaussResps = build_gaussian_response(
-            x, 
-            self.mu, 
-            sigma
-        )[0, ..., 0].cpu().numpy()
+        with torch.no_grad():
+            gaussResps = build_gaussian_response(
+                x, 
+                self.mu, 
+                sigma
+            )[0, ..., 0].cpu().numpy()
 
         nWin = TRFs.shape[2]
         assert nWin == self.nWin
@@ -978,6 +980,7 @@ class GaussianBasisTRF(FuncBasisTRF):
                 for i in range(self.inDim):
                     curFTRF = torchTRFs[j, i,:]
                     TRF = TRFs[j, i, :]
+                    # print(pearsonr(curFTRF, TRF))
                     assert np.around(pearsonr(curFTRF, TRF)[0]) >= 0.99
 
     def vis(self, fs = None):
