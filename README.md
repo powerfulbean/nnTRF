@@ -5,4 +5,12 @@ This package is an artificial neural network implementation for temporal respons
 
 ## Installation
 
-coming soon ....
+You can get the stable release from PyPI:
+```sh
+    pip install nntrf 
+```
+    
+Or get the latest version from this repo:
+```sh
+    pip install git+https://github.com/powerfulbean/nnTRF.git
+```
