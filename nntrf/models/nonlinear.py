@@ -1401,7 +1401,7 @@ class FuncTRFsGen(torch.nn.Module):
             # which is not stable 
             cSeq =  1 + cSeq
             cSeq = torch.maximum(cSeq, torch.tensor(0.5))
-            cSeq = torch.minimum(cSeq, torch.tensor(1.4))
+            cSeq = torch.minimum(cSeq, torch.tensor(1.2))
         else:
             nParamMiss += 1
             cSeq = 1
