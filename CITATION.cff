@@ -1,0 +1,39 @@
+cff-version: 1.2.0
+message: If you use this software, please cite the article from preferred-citation.
+authors:
+  - family-names: Dou
+    given-names: Jin
+  - family-names: Anderson
+    given-names: Andrew J.
+  - family-names: White
+    given-names: Aaron S.
+  - family-names: Norman-Haignere
+    given-names: Samuel V.
+  - family-names: Lalor
+    given-names: Edmund C.
+title: Dynamic modeling of EEG responses to natural speech reveals earlier processing of predictable words
+version: 1.0.0
+url: https://www.biorxiv.org/content/early/2024/08/26/2024.08.26.609779
+doi: 10.1101/2024.08.26.609779
+date-released: '2024-08-26'
+preferred-citation:
+  type: article
+  authors:
+    - family-names: Dou
+      given-names: Jin
+    - family-names: Anderson
+      given-names: Andrew J.
+    - family-names: White
+      given-names: Aaron S.
+    - family-names: Norman-Haignere
+      given-names: Samuel V.
+    - family-names: Lalor
+      given-names: Edmund C.
+  title: Dynamic modeling of EEG responses to natural speech reveals earlier processing of predictable words
+  doi: 10.1101/2024.08.26.609779
+  journal: bioRxiv
+  url: https://www.biorxiv.org/content/early/2024/08/26/2024.08.26.609779
+  year: '2024'
+  conference: {}
+  publisher:
+    name: Cold Spring Harbor Laboratory

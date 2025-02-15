@@ -359,7 +359,8 @@ def build_gaussian_response(x, mu, sigma):
     # output: (nBatch, nBasis, outDim, inDim, nWin, nSeq)
 
     # x: (nBatch, 1, 1, 1, nWin, nSeq)
-    x = x[:, None, ...]
+    if x.ndim == 5:
+        x = x[:, None, ...]
     # mu: (nBasis, 1, 1, 1, 1)
     mu = mu[..., None, None, None, None]
     # sigma: (nBasis, outDim, inDim,  1, 1)

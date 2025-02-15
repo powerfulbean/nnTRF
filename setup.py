@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
   name="nntrf",
-  version="1.0.0",
+  version="1.0.2",
   author="Jin Dou",
   author_email="jindou.bci@gmail.com",
   long_description_content_type="text/markdown",
@@ -18,6 +18,8 @@ setuptools.setup(
       "numpy>=1.20.1",
       "torch>=1.12.1,<2.0.0",
       "scikit-fda==0.7.1",
-      "mtrf"
+      "mtrf",
+      "scipy",
+      "mkl-devel"
   ],
 )
