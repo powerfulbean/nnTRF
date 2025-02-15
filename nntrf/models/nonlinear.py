@@ -960,9 +960,11 @@ class FuncTRFsGen(torch.nn.Module):
             cIdx = midParamList.index('c')
             #(nBatch, 1, 1, 1, nSeq)
             cSeq = self.pickParam(paramSeqs, cIdx)
+            # print('c: ',cSeq.squeeze())
             #two reasons, cSeq must be larger than 0; 
             #if 1 is the optimum, abs will have two x for the optimum, 
             # which is not stable 
+            # cSeq = torch.tanh(cSeq) #expr
             cSeq =  1 + cSeq
             cSeq = torch.maximum(cSeq, torch.tensor(0.5))
             cSeq = torch.minimum(cSeq, torch.tensor(1.28))
