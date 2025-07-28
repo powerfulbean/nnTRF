@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
   name="nntrf",
-  version="1.0.2",
+  version="1.0.3",
   author="Jin Dou",
   author_email="jindou.bci@gmail.com",
   long_description_content_type="text/markdown",
@@ -15,9 +15,9 @@ setuptools.setup(
   ],
   python_requires='>=3.8',
   install_requires=[
-      "numpy>=1.20.1",
-      "torch>=1.12.1,<2.0.0",
-      "scikit-fda==0.7.1",
+      "numpy<2.0.0",
+      "torch",
+      "scikit-fda",
       "mtrf",
       "scipy",
       "mkl-devel"
