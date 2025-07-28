@@ -2,6 +2,11 @@
 
 This package is an artificial neural network implementation for temporal responses function modelling of brain signal. It implement the linear time-invariant TRF ([mTRF-Toolbox](https://github.com/mickcrosse/mTRF-Toolbox), [mTRFpy](https://github.com/powerfulbean/mTRFpy)), the [dynamic TRF](https://doi.org/10.1101/2024.08.26.609779) framework and more!
 
+## Roadmap
+🚧 In Progress | ✅ Completed | 🧪 Testing | 🔜 Planned | 📦 Released
+
+🔜 self-developed fourier basis solver
+
 ## Installation
 
 You can get the stable release from PyPI:
