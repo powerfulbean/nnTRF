@@ -1158,7 +1158,7 @@ class ASTRF(torch.nn.Module):
             if timeinfo[ix] is not None:
                 # print(timeinfo[ix].shape)
                 if not self.x_is_timeseries:
-                    assert timeinfo[ix].shape[-1] == xi.shape[-1]
+                    assert timeinfo[ix].shape[-1] == xi.shape[-1], f"{timeinfo[ix].shape[-1]} != {xi.shape[-1]}"
                 nLen = torch.ceil(
                     timeinfo[ix][0][-1] * self.fs
                 ).long() + self.nWin
