@@ -902,7 +902,8 @@ class FuncTRFsGen(torch.nn.Module):
         return inDim, outDim, device
 
     def fitFuncTRF(self, w):
-        w = w * 1 / self.fs
+        # do the self.fs operation here because basisTRF doesn't keep fs info
+        w = w * 1 / self.fs 
         with torch.no_grad():
             self.basisTRF.fitTRFs(w)
         return self
