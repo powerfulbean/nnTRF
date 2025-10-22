@@ -146,8 +146,8 @@ class LTITRFGen(torch.nn.Module):
         b = b[0]
         w = w * 1 / fs
         b = b * 1/ fs
-        w = torch.FloatTensor(w).to(device)
-        b = torch.FloatTensor(b).to(device)
+        w = torch.from_numpy(w).to(device)
+        b = torch.from_numpy(b).to(device)
         w = w.permute(2, 0, 1) #(nOutChan, nInChan, nLag)
         with torch.no_grad():
             self.weight = torch.nn.Parameter(w)
@@ -1034,7 +1034,8 @@ class ASTRF(torch.nn.Module):
         fs,
         trfsGen = None,
         device = 'cpu',
-        x_is_timeseries = False
+        x_is_timeseries = False,
+        verbose = True
     ):
         '''
         inDim: int, the number of columns of input 
@@ -1064,8 +1065,9 @@ class ASTRF(torch.nn.Module):
             self.init_nonLinTRFs_bias(inDim, nWin, outDim, device)
         
         self.trfAligner = TRFAligner(device)
-        self._enableUserTRFGen = False 
+        self._enableUserTRFGen = True 
         self.device = device
+        self.verbose = verbose
 
     @property
     def inDim(self):
@@ -1130,7 +1132,8 @@ class ASTRF(torch.nn.Module):
     @if_enable_trfsGen.setter
     def if_enable_trfsGen(self,x):
         assert isinstance(x, bool)
-        print('set ifEnableNonLin',x)
+        if self.verbose:
+            print('set ifEnableNonLin',x)
         if x == True and self.trfsGen is None:
             raise ValueError('trfGen is None, cannot be enabled')
         self._enableUserTRFGen = x

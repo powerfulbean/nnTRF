@@ -1,6 +1,6 @@
 import torch
 
-class TwoMixedTRF(torch.nn.Module):
+class MixedTRF(torch.nn.Module):
         
     def __init__(
         self,

@@ -214,9 +214,9 @@ class CNNTRF(torch.nn.Module):
         b = b * 1/self.fs
         b = b[0]
         w = np.flip(w,axis = 1).copy()
-        w = torch.FloatTensor(w).to(device)
+        w = torch.from_numpy(w).to(device)
         w = w.permute(2,0,1)
-        b = torch.FloatTensor(b).to(device)
+        b = torch.from_numpy(b).to(device)
         with torch.no_grad():
             self.oCNN.weight = torch.nn.Parameter(w)
             self.oCNN.bias = torch.nn.Parameter(b)
