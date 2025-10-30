@@ -19,6 +19,7 @@ setuptools.setup(
       "torch",
       "mtrf",
       "scipy",
+      "matplotlib",
   ],
   extras_require={
     "testing": [
