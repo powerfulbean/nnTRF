@@ -22,6 +22,7 @@ setuptools.setup(
   ],
   extras_require={
     "testing": [
+        "requests",
         "pytest",
         "flake8",
     ],
