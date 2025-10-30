@@ -1,13 +1,18 @@
+import pickle
+import os
 import numpy as np
 import torch
 from mtrf.model import TRF, load_sample_data
 from nntrf.models import ASTRF, FuncTRFsGen, WordTRFEmbedGen, WordTRFEmbedGenTokenizer
 from nntrf.models import ASCNNTRF, CNNTRF, GaussianBasisTRF
+
+
 device = torch.device('cpu')
 
-def testASTRF():
+def test_ASTRF():
     trf = TRF()
     model = ASTRF(1, 128, 0, 700, 64, device = device)
+    model.if_enable_trfsGen = False
     w,b = model.get_linear_weights()
     trf.weights = w
     trf.bias = b
@@ -60,7 +65,7 @@ def testASTRF():
     print(output3.shape)
     assert torch.equal(output1, output3)
 
-def testASTRFLTI():
+def test_ASTRFLTI():
     stimulus, response, fs = load_sample_data(n_segments=9)
     stimulus = [s.mean(axis=1, keepdims=True) for s in stimulus]
     # stimulus = stimulus[:3]
@@ -71,7 +76,7 @@ def testASTRFLTI():
     predMTRF = np.stack(predMTRF, axis = 0)
     x = torch.stack(
         [
-            torch.tensor(i.T) for i in stimulus
+            torch.from_numpy(i.T) for i in stimulus
         ], 
         dim = 0
     ).to(device).float()
@@ -80,6 +85,7 @@ def testASTRFLTI():
 
     model = ASTRF(16, 128, 0, 700, fs, device = device)
     model.set_linear_weights(trf.weights, trf.bias)
+    model.if_enable_trfsGen = False
     model = model.eval()
     timeinfo = [None for i in range(nBatch)]
     with torch.no_grad():
@@ -88,8 +94,8 @@ def testASTRFLTI():
     # print(predNNTRF.shape, predMTRF.shape)
     assert np.allclose(predNNTRF, predMTRF, atol = 1e-6)
 
-def testASCNNTRFLTI(tmin, tmax):
-    print('testASCNNTRFLTI', tmin, tmax)
+def _testASCNNTRFLTI(tmin, tmax):
+    # print('testASCNNTRFLTI', tmin, tmax)
     stimulus, response, fs = load_sample_data(n_segments=1)
     trf = TRF(direction=1)
     trf.train(stimulus, response, fs, tmin / 1e3, tmax / 1e3, 100)
@@ -98,10 +104,10 @@ def testASCNNTRFLTI(tmin, tmax):
     
     x = torch.stack(
         [
-            torch.tensor(i.T) for i in stimulus
+            torch.from_numpy(i.T) for i in stimulus
         ], 
         dim = 0
-    ).to(device).float()
+    ).to(device)
     nBatch = x.shape[0]
     nSeq = x.shape[2]
 
@@ -113,7 +119,7 @@ def testASCNNTRFLTI(tmin, tmax):
     assert np.allclose(predNNTRF2, predMTRF, atol = 1e-5)
 
     model = ASCNNTRF(16, 128, tmin, tmax, fs, device = device)
-    model.loadLTIWeights(trf.weights, trf.bias)
+    model.set_linear_weights(trf.weights, trf.bias)
     model = model.eval()
     with torch.no_grad():
         predNNTRF = model(x).cpu().detach().permute(0,2,1).numpy()
@@ -130,7 +136,7 @@ def testASCNNTRFLTI(tmin, tmax):
     assert np.allclose(predNNTRF, predMTRF, atol = 1e-5)
 
 
-def testFuncTRF(basisTRFName, ifFitMTRFWithExtTimeLag = True):
+def _testFuncTRF(basisTRFName, ifFitMTRFWithExtTimeLag = True):
     stimulus, response, fs = load_sample_data(n_segments=9)
     stimulus = [s.mean(axis=1, keepdims=True) for s in stimulus]
     stimulus = stimulus#[:3]
@@ -196,7 +202,7 @@ def testFuncTRF(basisTRFName, ifFitMTRFWithExtTimeLag = True):
     '''
     
 
-def testTRFEmbed():
+def test_TRFEmbed():
     wordsDict = {'he':1, 'is':2, 'a':3, 'old':4, 'man':5, 'who':6, 'has':7, 'been':8, 'fishing':9}
 
     timeinfo = [
@@ -216,8 +222,8 @@ def testTRFEmbed():
 
     model = ASTRF(16, 128, 0, 700, 64, device = device)
     trfsGen = WordTRFEmbedGen(128, 4, 0, 700, 64, wordsDict, device = device)
-    model.setTRFsGen(trfsGen)
-    model.ifEnableUserTRFGen = True
+    model.set_trfs_gen(trfsGen)
+    model.if_enable_trfsGen = True
     model = model.eval()
     words = [
         [
@@ -231,17 +237,64 @@ def testTRFEmbed():
     pred = model(x, timeinfo)
     print(pred.shape)
     model.ifEnableUserTRFGen = False
-    x = [x_[None, :] for x_ in x]
-    pred = model(x, timeinfo)
-    print(pred.shape)
+    # x = [x_[None, :] for x_ in x]
+    # pred = model(x, timeinfo)
+    # print(pred.shape)
+
+def test_gauss():
+    _testFuncTRF('gauss', True)
+
+def test_ASCNNTRFLTI():
+    _testASCNNTRFLTI(0, 700)
+    _testASCNNTRFLTI(-100, 300)
+    _testASCNNTRFLTI(-100, 0)
+    _testASCNNTRFLTI(0, 300)
 
 
-# testASCNNTRFLTI(0, 700)
-# testASCNNTRFLTI(-100, 300)
-# testASCNNTRFLTI(-100, 0)
-# testASCNNTRFLTI(0, 300)
+def test_on_one_trf(trf:TRF, x, timeinfo):
+    x = x[0:1]
+    tmin_ms1, tmax_ms1 = trf.times[0]*1000, trf.times[-1]*1000
+    print(tmin_ms1, tmax_ms1)
+    dytrf_for_mtrf = ASTRF(
+        1,128,tmin_ms1, tmax_ms1, trf.fs
+    )
+    dytrf_for_mtrf.set_linear_weights(trf.weights, trf.bias)
+    print(dytrf_for_mtrf.if_enable_trfsGen)
+    nLen = np.ceil(timeinfo[0][-1] * trf.fs).astype(int) + dytrf_for_mtrf.nWin
+    vIdx = np.round(timeinfo[0] * trf.fs).astype(int)
+    x_timeserie = np.zeros((nLen, 1))
+    x_timeserie[vIdx,:] = x.T
+
+    trf_pred = trf.predict(x_timeserie)[0]
+    with torch.no_grad():
+        x = torch.from_numpy(x)
+        timeinfo = torch.from_numpy(timeinfo)
+        dytrf_pred = dytrf_for_mtrf([x], [timeinfo]).transpose(-1,-2).cpu().numpy()[0]
+        print(trf_pred.shape, dytrf_pred.shape)
+        # print(trf_pred, dytrf_pred)
+    assert np.allclose(trf_pred, dytrf_pred), np.max(np.abs(trf_pred - dytrf_pred))
+
+def test_negetive_timelag():
+    current_folder = os.path.dirname(os.path.abspath(__file__))
+    with open(f"{current_folder}/saved_mtrf.pkl", mode='rb') as f:
+        mtrf, mtrf_lrg, _, _, _ = pickle.load(f)
+        mtrf:TRF
+        mtrf_lrg:TRF
+    with open(f"{current_folder}/dummy_discrete_stim_no_tag.pkl", mode='rb') as f:
+        x, timeinfo = pickle.load(f)
+    print(timeinfo)
+    test_on_one_trf(mtrf, x, timeinfo)
+    test_on_one_trf(mtrf_lrg, x, timeinfo)
+    
+
+
+
 # testASTRF()
 # testASTRFLTI()
-testFuncTRF('gauss', True)
+# testFuncTRF('gauss', True)
 # testFuncTRF('fourier')
 # testTRFEmbed()
+# test_ASCNNTRFLTI()
+# test_ASTRFLTI()
+# test_TRFEmbed()
+# test_negetive_timelag()
