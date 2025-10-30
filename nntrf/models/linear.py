@@ -25,7 +25,7 @@ def msec2Idxs(msecRange,fs):
     
     tmin = msecRange[0]/1e3
     tmax = msecRange[1]/1e3
-    return list(range(int(np.floor(tmin*fs)),int(np.ceil(tmax*fs)) + 1))
+    return list(range(np.floor(tmin*fs).astype(int),np.ceil(tmax*fs).astype(int) + 1))
 
 def Idxs2msec(lags,fs):
     '''

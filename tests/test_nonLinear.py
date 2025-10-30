@@ -251,9 +251,10 @@ def test_ASCNNTRFLTI():
     _testASCNNTRFLTI(0, 300)
 
 
-def test_on_one_trf(trf:TRF, x, timeinfo):
+def _test_on_one_trf(trf:TRF, x, timeinfo):
     x = x[0:1]
-    tmin_ms1, tmax_ms1 = trf.times[0]*1000, trf.times[-1]*1000
+    times = trf.times.cpu().numpy()
+    tmin_ms1, tmax_ms1 = times[0]*1000, times[-1]*1000
     print(tmin_ms1, tmax_ms1)
     dytrf_for_mtrf = ASTRF(
         1,128,tmin_ms1, tmax_ms1, trf.fs
@@ -283,8 +284,8 @@ def test_negetive_timelag():
     with open(f"{current_folder}/dummy_discrete_stim_no_tag.pkl", mode='rb') as f:
         x, timeinfo = pickle.load(f)
     print(timeinfo)
-    test_on_one_trf(mtrf, x, timeinfo)
-    test_on_one_trf(mtrf_lrg, x, timeinfo)
+    _test_on_one_trf(mtrf, x, timeinfo)
+    _test_on_one_trf(mtrf_lrg, x, timeinfo)
     
 
 

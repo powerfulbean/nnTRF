@@ -20,4 +20,10 @@ setuptools.setup(
       "mtrf",
       "scipy",
   ],
+  extras_require={
+    "testing": [
+        "requests",
+        "flake8",
+    ],
+  },
 )
