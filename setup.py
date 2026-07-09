@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
   name="nntrf",
-  version="1.0.5.fix",
+  version="1.0.6",
   author="Jin Dou",
   author_email="jindou.bci@gmail.com",
   long_description_content_type="text/markdown",
