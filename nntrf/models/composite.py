@@ -34,6 +34,10 @@ class MixedTRF(torch.nn.Module):
                 # concatente
                 if len(feats) == 1:
                     feats = feats[0]
+                    feats = {
+                        'x':feats['x'],
+                        'timeinfo':feats['timeinfo']
+                    }
                 else:
                     # raise NotImplementedError
                     timeinfo_0 = feats[0]['timeinfo']
